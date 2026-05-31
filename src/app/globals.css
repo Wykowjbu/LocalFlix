@@ -1,26 +1,105 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #141414;
+  --foreground: #ffffff;
+  --primary: #e50914;
+  --primary-soft: #eb3942;
+  --primary-label: #f50723;
+  --primary-hover: #f40612;
+  --primary-active: #bb0a12;
+  --surface-card: #181818;
+  --surface-panel: #232323;
+  --surface-elevated: #2f2f2f;
+  --hairline: #333333;
+  --text-secondary: #e5e5e5;
+  --text-soft: #bcbcbc;
+  --text-subtle: #b3b3b3;
+  --text-muted: #808080;
+  --text-success: #46d369;
+  --font-netflix: "Netflix Sans", "Helvetica Neue", Arial, "Segoe UI", Roboto, sans-serif;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-netflix-red: var(--primary);
+  --color-canvas: var(--background);
+  --color-surface-card: var(--surface-card);
+  --color-surface-elevated: var(--surface-elevated);
+  --font-sans: var(--font-netflix);
+  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  min-height: 100%;
+  background: #141414;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-netflix);
+  letter-spacing: 0;
+  text-rendering: geometricPrecision;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+img {
+  display: block;
+}
+
+.no-scrollbar {
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.movie-card {
+  transition: z-index 0ms linear 300ms;
+}
+
+.movie-card:hover {
+  z-index: 40;
+}
+
+.mini-preview-modal {
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.95);
+  transition:
+    opacity 0.3s ease,
+    transform 0.3s ease,
+    visibility 0.3s;
+  visibility: hidden;
+}
+
+.mini-preview-modal.active {
+  opacity: 1;
+  pointer-events: auto;
+  transform: scale(1);
+  visibility: visible;
+}
+
+@media (max-width: 767px), (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .mini-preview-modal {
+    transition-duration: 0.01ms !important;
+  }
 }
