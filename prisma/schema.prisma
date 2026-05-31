@@ -6,129 +6,233 @@ generator client {
 
 datasource db {
   provider = "sqlite"
-  url      = env("DATABASE_URL") // Prisma 6 hỗ trợ khai báo url trực tiếp tại đây
+  url      = env("DATABASE_URL")
 }
 
-// ------------------------------------------------------
-// QUẢN LÝ NGƯỜI DÙNG & HỒ SƠ (NETFLIX PROFILE)
-// ------------------------------------------------------
+// ==========================================
+// 1. NGƯỜI DÙNG & HỒ SƠ (NETFLIX PROFILES)
+// ==========================================
 
 model User {
-  id        String    @id @default(cuid())
-  email     String    @unique
-  password  String    // Password đã được hash
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
   
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   profiles  Profile[]
 }
 
 model Profile {
-  id        String    @id @default(cuid())
-  name      String    // Ví dụ: "Huy", "Kids", ...
-  avatarUrl String?   
+  id        String   @id @default(cuid())
+  name      String
+  avatarUrl String?
   userId    String
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  favorites Favorite[] 
-  history   WatchHistory[]
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  favorites  Favorite[]
+  history    WatchHistory[]
+  reactions  Reaction[]
+
+  @@index([userId])
 }
 
-// ------------------------------------------------------
-// QUẢN LÝ DỮ LIỆU PHIM (Đã tối ưu cho việc Sync Data)
-// ------------------------------------------------------
+// ==========================================
+// 2. DỮ LIỆU PHIM & ĐỒNG BỘ (SYNC DATA)
+// ==========================================
 
 model Movie {
-  id              String    @id @default(cuid())
-  slug            String    @unique 
-  name            String
-  originalName    String?
-  thumbUrl        String?
-  posterUrl       String?
-  description     String?   
-  totalEpisodes   Int?
-  currentEpisode  String?
-  time            String?
-  quality         String?
-  language        String?
-  director        String?
-  casts           String?
+  id               String  @id @default(cuid())
 
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  // Định danh từ API nguồn
+  sourceId         String? @unique
+  slug             String  @unique
 
-  // Quan hệ 1-N (1 Phim có nhiều Tập)
-  episodes        Episode[]
-  
-  // Quan hệ N-N (Nhiều phim thuộc nhiều Thể loại / Quốc gia)
-  categories      Category[] 
-  countries       Country[]  
+  // Thông tin hiển thị
+  name             String
+  originalName     String?
+  thumbUrl         String?
+  posterUrl        String?
+  description      String?
 
-  // Tương tác của người dùng
-  favorites       Favorite[]
-  history         WatchHistory[]
+  // Chi tiết phim
+  totalEpisodes    Int?
+  currentEpisode   String?
+  time             String?
+  quality          String?
+  language         String?
+  director         String?
+  casts            String?
+
+  // Tracking thời gian để phục vụ Sync Logic
+  sourceCreatedAt  DateTime?
+  sourceModifiedAt DateTime?
+  lastSyncedAt     DateTime?
+
+  // Thời gian DB nội bộ
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  // Quan hệ
+  episodes         Episode[]
+  tags             MovieTag[]
+  collections      MovieCollection[]
+  favorites        Favorite[]
+  history          WatchHistory[]
+  reactions        Reaction[]
+
+  // Đánh index cực kỳ quan trọng để search và filter nhanh
+  @@index([slug])
+  @@index([name])
+  @@index([originalName])
+  @@index([sourceModifiedAt]) // Index này giúp query ra những phim nào có update mới nhất nhanh hơn
 }
 
 model Episode {
-  id          String   @id @default(cuid())
-  serverName  String   // Ví dụ: "Vietsub #1"
-  name        String   // Ví dụ: "1", "2"
-  slug        String   
-  embedUrl    String?  
-  m3u8Url     String?  
-  
-  movieId     String
-  movie       Movie    @relation(fields: [movieId], references: [slug], onDelete: Cascade) 
+  id         String   @id @default(cuid())
+  movieSlug  String
 
-  @@unique([movieId, serverName, slug]) // Tránh lưu trùng 1 tập của 1 server
+  serverName String
+  name       String
+  slug       String
+
+  embedUrl   String?
+  m3u8Url    String?
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  movie      Movie    @relation(fields: [movieSlug], references: [slug], onDelete: Cascade)
+
+  // Cặp khóa duy nhất để phục vụ hàm upsert (Cập nhật nếu có, tạo mới nếu chưa)
+  @@unique([movieSlug, serverName, slug])
+  @@index([movieSlug])
 }
 
-// ------------------------------------------------------
-// BẢNG BỔ TRỢ (LỌC THEO THỂ LOẠI & QUỐC GIA)
-// ------------------------------------------------------
+// ==========================================
+// 3. HỆ THỐNG PHÂN LOẠI ĐỘNG (TAGS & GROUPS)
+// ==========================================
 
-model Category {
-  id     String  @id @default(cuid())
-  name   String  // Ví dụ: "Hành Động"
-  slug   String  @unique // Ví dụ: "hanh-dong"
-  
-  movies Movie[]
+model TagGroup {
+  id   String @id @default(cuid())
+  name String @unique // Ví dụ: "Năm", "Quốc gia", "Thể loại", "Định dạng"
+
+  tags Tag[]
 }
 
-model Country {
-  id     String  @id @default(cuid())
-  name   String  // Ví dụ: "Âu Mỹ"
-  slug   String  @unique // Ví dụ: "au-my"
-  
-  movies Movie[]
+model Tag {
+  id      String @id @default(cuid())
+  name    String // Ví dụ: "2024", "Trung Quốc", "Hành Động"
+  slug    String
+  groupId String
+
+  group   TagGroup   @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  movies  MovieTag[]
+
+  @@unique([groupId, slug]) // Trong cùng 1 nhóm không được trùng slug
+  @@index([groupId])
 }
 
-// ------------------------------------------------------
-// TƯƠNG TÁC CỦA NGƯỜI DÙNG (MY LIST & LỊCH SỬ)
-// ------------------------------------------------------
+model MovieTag {
+  movieSlug String
+  tagId     String
+
+  movie     Movie @relation(fields: [movieSlug], references: [slug], onDelete: Cascade)
+  tag       Tag   @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([movieSlug, tagId])
+}
+
+// ==========================================
+// 4. DANH SÁCH HIỂN THỊ TRANG CHỦ (COLLECTIONS)
+// ==========================================
+
+model Collection {
+  id           String    @id @default(cuid())
+  name         String    // Ví dụ: "Phim đang chiếu"
+  title        String?   
+  slug         String    @unique // Ví dụ: "phim-dang-chieu"
+  type         String?   // Ví dụ: "danh-sach", "the-loai", "latest"
+  endpoint     String?   // Lưu lại URL gốc để dễ gọi API sync
+  
+  lastSyncedAt DateTime?
+
+  movies       MovieCollection[]
+}
+
+model MovieCollection {
+  collectionId String
+  movieSlug    String
+  position     Int?      // Để sort thứ tự phim hiển thị trên UI (như Top 10)
+  page         Int?      // Lưu lại phim này nằm ở page mấy của API (tiện cho việc debug sync)
+
+  collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  movie        Movie      @relation(fields: [movieSlug], references: [slug], onDelete: Cascade)
+
+  @@id([collectionId, movieSlug])
+  @@index([movieSlug])
+}
+
+// ==========================================
+// 5. TƯƠNG TÁC NGƯỜI DÙNG
+// ==========================================
 
 model Favorite {
   id        String   @id @default(cuid())
   profileId String
-  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
-  movieId   String
-  movie     Movie    @relation(fields: [movieId], references: [slug], onDelete: Cascade)
-  
+  movieSlug String
   createdAt DateTime @default(now())
 
-  @@unique([profileId, movieId]) 
+  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  movie     Movie    @relation(fields: [movieSlug], references: [slug], onDelete: Cascade)
+
+  @@unique([profileId, movieSlug])
+  @@index([profileId])
+  @@index([movieSlug])
+}
+
+// ==========================================
+// 6. REACTION (LIKE/DISLIKE)
+// ==========================================
+
+model Reaction {
+  id        String   @id @default(cuid())
+  profileId String
+  movieSlug String
+  value     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  movie     Movie    @relation(fields: [movieSlug], references: [slug], onDelete: Cascade)
+
+  @@unique([profileId, movieSlug])
+  @@index([profileId])
+  @@index([movieSlug])
 }
 
 model WatchHistory {
-  id        String   @id @default(cuid())
-  profileId String
-  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
-  movieId   String
-  movie     Movie    @relation(fields: [movieId], references: [slug], onDelete: Cascade)
-  
-  episodeSlug String?  // Lưu lại tập đang xem dở
-  progress    Int?     // Lưu số giây đang xem
-  updatedAt   DateTime @updatedAt 
+  id          String   @id @default(cuid())
+  profileId   String
+  movieSlug   String
 
-  @@unique([profileId, movieId]) 
+  episodeSlug String?  // Lưu slug tập đang xem
+  serverName  String?  // Ghi nhớ user đang xem server nào
+  progress    Int?     // Đã xem tới giây thứ bao nhiêu
+  duration    Int?     // Tổng thời lượng video (để tính % tiến trình)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt // Cực kỳ quan trọng để lôi phim vừa xem xong lên đầu danh sách "Tiếp tục xem"
+
+  profile     Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  movie       Movie    @relation(fields: [movieSlug], references: [slug], onDelete: Cascade)
+
+  @@unique([profileId, movieSlug])
+  @@index([profileId])
+  @@index([movieSlug])
 }
