@@ -20,6 +20,7 @@ export default function SearchClient() {
   const [activeProfile, setActiveProfile] = useState<Profile | null>(null);
   const [preview, setPreview] = useState<PreviewState | null>(null);
   const [detailMovie, setDetailMovie] = useState<Movie | null>(null);
+  const [closing, setClosing] = useState(false);
   const [favoriteSlugs, setFavoriteSlugs] = useState<Set<string>>(new Set());
   const [likedSlugs, setLikedSlugs] = useState<Set<string>>(new Set());
   const [dislikedSlugs, setDislikedSlugs] = useState<Set<string>>(new Set());
@@ -160,6 +161,15 @@ export default function SearchClient() {
     setDetailMovie(movie);
   }, []);
 
+  const handleCloseDetail = useCallback(() => {
+    if (closing) return;
+    setClosing(true);
+    setTimeout(() => {
+      setDetailMovie(null);
+      setClosing(false);
+    }, 200);
+  }, [closing]);
+
   const handlePlay = useCallback((movie: Movie) => {
     router.push(`/watch/${movie.id}`);
   }, [router]);
@@ -243,7 +253,8 @@ export default function SearchClient() {
       {detailMovie ? (
         <DetailModal
           movie={detailMovie}
-          onClose={() => setDetailMovie(null)}
+          closing={closing}
+          onClose={handleCloseDetail}
           onSearch={(keyword) => { router.push(`/search?q=${encodeURIComponent(keyword)}`); }}
           onPlay={handlePlaySlug}
           isFavorite={favoriteSlugs.has(detailMovie.id)}

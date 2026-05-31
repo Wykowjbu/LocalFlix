@@ -92,6 +92,24 @@ img {
   pointer-events: none;
 }
 
+@keyframes detailContentEnter {
+  from { opacity: 0; transform: scale(0.92); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes detailContentExit {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(0.92); }
+}
+
+.detail-modal-content {
+  animation: detailContentEnter 0.3s cubic-bezier(0.5, 0, 0.1, 1) forwards;
+}
+
+.detail-modal-content.exiting {
+  animation: detailContentExit 0.2s cubic-bezier(0.5, 0, 0.1, 1) forwards;
+}
+
 @media (max-width: 767px), (prefers-reduced-motion: reduce) {
   *,
   *::before,

@@ -18,9 +18,9 @@ type MovieDetail = {
 };
 
 export default function DetailModal({
-  movie, onClose, onSearch, onPlay, isFavorite, isLiked, isDisliked, onToggleFavorite, onToggleLike, onToggleDislike,
+  movie, closing, onClose, onSearch, onPlay, isFavorite, isLiked, isDisliked, onToggleFavorite, onToggleLike, onToggleDislike,
 }: {
-  movie: Movie; onClose: () => void; onSearch?: (keyword: string) => void;
+  movie: Movie; closing?: boolean; onClose: () => void; onSearch?: (keyword: string) => void;
   onPlay?: (slug: string, episodeSlug?: string) => void;
   isFavorite?: boolean; isLiked?: boolean; isDisliked?: boolean;
   onToggleFavorite?: () => void; onToggleLike?: () => void; onToggleDislike?: () => void;
@@ -64,10 +64,10 @@ export default function DetailModal({
   const totalEps = detail?.totalEpisodes;
 
   return (
-    <div className="fixed inset-0 z-[80] overflow-y-auto bg-black/70 px-3 py-8 md:px-8" onMouseDown={onClose}>
+    <div className={`fixed inset-0 z-[80] overflow-y-auto bg-black/70 px-3 py-8 md:px-8 ${closing ? 'pointer-events-none' : ''}`} onMouseDown={onClose}>
       <section
         role="dialog" aria-modal="true" aria-label={movie.title} tabIndex={-1}
-        className="mx-auto min-h-[80vh] w-[92vw] max-w-[850px] overflow-hidden rounded-md bg-[#181818] pb-8 text-white shadow-[0_3px_10px_rgba(0,0,0,.75)] outline-none"
+        className={`mx-auto min-h-[80vh] w-[92vw] max-w-[850px] overflow-hidden rounded-md bg-[#181818] pb-8 text-white shadow-[0_3px_10px_rgba(0,0,0,.75)] outline-none detail-modal-content ${closing ? 'exiting' : ''}`}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="relative aspect-video min-h-[300px] overflow-hidden bg-[#141414]">

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { movieRows, type Movie, type Profile } from "@/data/netflix";
 import { ACTIVE_PROFILE_STORAGE_KEY, getStoredProfiles, getStoredSession, SESSION_STORAGE_KEY } from "@/lib/session";
 import { mapDbMovie, type DbMovie } from "@/lib/movie-format";
@@ -21,9 +21,9 @@ type DbCollection = {
 
 export default function Browse({ activeProfile, onProfileChange }: { activeProfile: Profile; onProfileChange: (profile: Profile) => void }) {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const [accountProfiles] = useState(getStoredProfiles);
   const [detailMovie, setDetailMovie] = useState<Movie | null>(null);
+  const [closing, setClosing] = useState(false);
   const [preview, setPreview] = useState<PreviewState | null>(null);
   const [seeding, setSeeding] = useState(false);
   const [seedResult, setSeedResult] = useState<string | null>(null);
@@ -268,44 +268,27 @@ export default function Browse({ activeProfile, onProfileChange }: { activeProfi
 
   useEffect(() => { return () => { if (previewOpenTimer.current) window.clearTimeout(previewOpenTimer.current); if (previewHideTimer.current) window.clearTimeout(previewHideTimer.current); if (previewRemoveTimer.current) window.clearTimeout(previewRemoveTimer.current); }; }, []);
 
-  // Detail modal via ?jbv= URL param
-  useEffect(() => {
-    const jbv = searchParams.get("jbv");
-    if (jbv) {
-      const allMovies = [...myListMovies, ...continueWatchingMovies];
-      for (const movies of dbCollectionsMovies.values()) allMovies.push(...movies);
-      const found = allMovies.find((m) => m.id === jbv);
-      if (found) { setDetailMovie(found); return; }
-      import("@/data/netflix").then(({ movieRows }) => {
-        for (const row of movieRows) {
-          const found = row.movies.find((m) => m.id === jbv);
-          if (found) { setDetailMovie(found); break; }
-        }
-      });
-      fetch(`/api/movies?slug=${encodeURIComponent(jbv)}`)
-        .then((res) => res.json())
-        .then((data) => { if (data.movie) setDetailMovie(mapDbMovie(data.movie as DbMovie)); })
-        .catch(() => {});
-    }
-  }, [searchParams, myListMovies, continueWatchingMovies, dbCollectionsMovies]);
-
   const heroMovie = dbCollections.length > 0 ? (dbCollectionsMovies.get(dbCollections[0]?.slug)?.[0] || null) : null;
   const interactionProps = { favoriteSlugs, likedSlugs, dislikedSlugs, onToggleFavorite: handleToggleFavorite, onToggleLike: handleToggleLike, onToggleDislike: handleToggleDislike, onPlay: handlePlay };
   const expandHandler = (movie: Movie) => {
     setPreview(null);
-    router.push(`/browse?jbv=${movie.id}`, { scroll: false });
+    setDetailMovie(movie);
   };
 
-  const handleCloseDetail = () => {
-    setDetailMovie(null);
-    router.replace("/browse");
-  };
+  const handleCloseDetail = useCallback(() => {
+    if (closing) return;
+    setClosing(true);
+    setTimeout(() => {
+      setDetailMovie(null);
+      setClosing(false);
+    }, 200);
+  }, [closing]);
 
   return (
     <main className="min-h-screen bg-[#141414] pb-16 text-white">
       <TopNav activeProfile={activeProfile} accountProfiles={accountProfiles} onProfileChange={handleProfileChange} onLogout={handleLogout} onSeed={handleSeed} onSeedForce={handleSeedForce} seeding={seeding} seedResult={seedResult} />
       <>
-        <HeroBillboard heroMovie={heroMovie} onPlay={handlePlaySlug} onInfo={(m) => { router.push(`/browse?jbv=${m.id}`, { scroll: false }); }} />
+        <HeroBillboard heroMovie={heroMovie} onPlay={handlePlaySlug} onInfo={(m) => { setPreview(null); setDetailMovie(m); }} />
         <div className="-mt-[7vw] space-y-[1vw]">
           {continueWatchingMovies.length > 0 && (
             <MovieRow title="Tiếp tục xem" movies={continueWatchingMovies} onExpand={expandHandler} onPreview={openPreview} onPreviewEnd={closePreview} {...interactionProps} />
@@ -325,11 +308,12 @@ export default function Browse({ activeProfile, onProfileChange }: { activeProfi
         </div>
       </>
       {preview ? (
-        <MiniPreviewModal preview={preview} onKeepOpen={keepPreviewOpen} onPreviewEnd={closePreviewNow} onExpand={(movie) => { closePreviewNow(); router.push(`/browse?jbv=${movie.id}`, { scroll: false }); }} {...interactionProps} />
+        <MiniPreviewModal preview={preview} onKeepOpen={keepPreviewOpen} onPreviewEnd={closePreviewNow} onExpand={(movie) => { closePreviewNow(); setDetailMovie(movie); }} {...interactionProps} />
       ) : null}
       {detailMovie ? (
         <DetailModal
           movie={detailMovie}
+          closing={closing}
           onClose={handleCloseDetail}
           onSearch={(keyword) => { router.push(`/search?q=${encodeURIComponent(keyword)}`); }}
           onPlay={handlePlaySlug}
