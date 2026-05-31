@@ -275,13 +275,17 @@ export default function Browse({ activeProfile, onProfileChange }: { activeProfi
       const allMovies = [...myListMovies, ...continueWatchingMovies];
       for (const movies of dbCollectionsMovies.values()) allMovies.push(...movies);
       const found = allMovies.find((m) => m.id === jbv);
-      if (found) setDetailMovie(found);
+      if (found) { setDetailMovie(found); return; }
       import("@/data/netflix").then(({ movieRows }) => {
         for (const row of movieRows) {
           const found = row.movies.find((m) => m.id === jbv);
           if (found) { setDetailMovie(found); break; }
         }
       });
+      fetch(`/api/movies?slug=${encodeURIComponent(jbv)}`)
+        .then((res) => res.json())
+        .then((data) => { if (data.movie) setDetailMovie(mapDbMovie(data.movie as DbMovie)); })
+        .catch(() => {});
     }
   }, [searchParams, myListMovies, continueWatchingMovies, dbCollectionsMovies]);
 

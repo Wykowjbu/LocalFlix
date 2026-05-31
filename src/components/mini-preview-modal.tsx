@@ -56,7 +56,7 @@ export default function MiniPreviewModal({
       tabIndex={-1}
       data-uia="modal-motion-container-MINI_MODAL"
       className={`mini-preview-modal absolute z-[70] overflow-hidden rounded-md bg-[#181818] text-white shadow-[0_3px_10px_rgba(0,0,0,.75)] ${
-        preview.active ? "active" : ""
+        !preview.active ? "exiting" : ""
       }`}
       style={{ top, left, width, transformOrigin: "50% 50%" }}
       onMouseEnter={onKeepOpen}

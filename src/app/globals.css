@@ -71,22 +71,25 @@ img {
   z-index: 40;
 }
 
-.mini-preview-modal {
-  opacity: 0;
-  pointer-events: none;
-  transform: scale(0.95);
-  transition:
-    opacity 0.3s ease,
-    transform 0.3s ease,
-    visibility 0.3s;
-  visibility: hidden;
+@keyframes miniPreviewEnter {
+  from { opacity: 0; transform: scale(0.2); }
+  to { opacity: 1; transform: scale(1); }
 }
 
-.mini-preview-modal.active {
-  opacity: 1;
+@keyframes miniPreviewExit {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(0.2); }
+}
+
+.mini-preview-modal {
+  animation: miniPreviewEnter 0.4s cubic-bezier(0.5, 0, 0.1, 1) forwards;
   pointer-events: auto;
-  transform: scale(1);
   visibility: visible;
+}
+
+.mini-preview-modal.exiting {
+  animation: miniPreviewExit 0.3s cubic-bezier(0.5, 0, 0.1, 1) forwards;
+  pointer-events: none;
 }
 
 @media (max-width: 767px), (prefers-reduced-motion: reduce) {
@@ -96,10 +99,6 @@ img {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     scroll-behavior: auto !important;
-    transition-duration: 0.01ms !important;
-  }
-
-  .mini-preview-modal {
     transition-duration: 0.01ms !important;
   }
 }

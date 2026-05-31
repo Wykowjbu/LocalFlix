@@ -1,12 +1,15 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import SearchResultsGrid from "@/components/search-results-grid";
 import TopNav from "@/components/top-nav";
+import MiniPreviewModal from "@/components/mini-preview-modal";
+import DetailModal from "@/components/detail-modal";
 import { getStoredProfiles, getStoredSession, getStoredActiveProfileId, saveStoredActiveProfileId, ACTIVE_PROFILE_STORAGE_KEY, SESSION_STORAGE_KEY } from "@/lib/session";
 import { mapDbMovie, type DbMovie } from "@/lib/movie-format";
 import { profiles, type Movie, type Profile } from "@/data/netflix";
+import type { PreviewState } from "@/components/mini-preview-modal";
 
 export default function SearchClient() {
   const router = useRouter();
@@ -15,6 +18,15 @@ export default function SearchClient() {
   const [movies, setMovies] = useState<Movie[]>([]);
   const [searching, setSearching] = useState(false);
   const [activeProfile, setActiveProfile] = useState<Profile | null>(null);
+  const [preview, setPreview] = useState<PreviewState | null>(null);
+  const [detailMovie, setDetailMovie] = useState<Movie | null>(null);
+  const [favoriteSlugs, setFavoriteSlugs] = useState<Set<string>>(new Set());
+  const [likedSlugs, setLikedSlugs] = useState<Set<string>>(new Set());
+  const [dislikedSlugs, setDislikedSlugs] = useState<Set<string>>(new Set());
+  const previewOpenTimer = useRef<number | null>(null);
+  const previewHideTimer = useRef<number | null>(null);
+  const previewRemoveTimer = useRef<number | null>(null);
+  const currentActivePopup = useRef<string | null>(null);
 
   useEffect(() => {
     const session = getStoredSession();
@@ -36,12 +48,124 @@ export default function SearchClient() {
       .finally(() => setSearching(false));
   }, [query]);
 
+  const loadInteractions = useCallback(async (profileId: string) => {
+    try {
+      const res = await fetch(`/api/interactions?profileId=${profileId}`);
+      const data = await res.json();
+      if (data.favoriteSlugs) setFavoriteSlugs(new Set(data.favoriteSlugs));
+      if (data.likedSlugs) setLikedSlugs(new Set(data.likedSlugs));
+      if (data.dislikedSlugs) setDislikedSlugs(new Set(data.dislikedSlugs));
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    if (activeProfile) loadInteractions(activeProfile.id);
+  }, [activeProfile, loadInteractions]);
+
+  const handleToggleFavorite = useCallback(async (movie: Movie) => {
+    const slug = movie.id;
+    const isCurrentlyFav = favoriteSlugs.has(slug);
+    setFavoriteSlugs((prev) => {
+      const next = new Set(prev);
+      if (isCurrentlyFav) next.delete(slug);
+      else next.add(slug);
+      return next;
+    });
+    try {
+      await fetch('/api/interactions/favorites', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ profileId: activeProfile!.id, movieSlug: slug, enabled: !isCurrentlyFav }) });
+    } catch {
+      setFavoriteSlugs((prev) => {
+        const next = new Set(prev);
+        if (isCurrentlyFav) next.add(slug);
+        else next.delete(slug);
+        return next;
+      });
+    }
+  }, [activeProfile, favoriteSlugs]);
+
+  const handleToggleLike = useCallback(async (movie: Movie) => {
+    const slug = movie.id;
+    const isCurrentlyLiked = likedSlugs.has(slug);
+    const wasDisliked = dislikedSlugs.has(slug);
+    setLikedSlugs((prev) => {
+      const next = new Set(prev);
+      if (isCurrentlyLiked) next.delete(slug);
+      else next.add(slug);
+      return next;
+    });
+    if (!isCurrentlyLiked) {
+      setDislikedSlugs((prev) => {
+        const next = new Set(prev);
+        next.delete(slug);
+        return next;
+      });
+    }
+    try {
+      await fetch('/api/interactions/reactions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ profileId: activeProfile!.id, movieSlug: slug, value: isCurrentlyLiked ? null : 'like' }) });
+    } catch {
+      setLikedSlugs((prev) => {
+        const next = new Set(prev);
+        if (isCurrentlyLiked) next.add(slug);
+        else next.delete(slug);
+        return next;
+      });
+      if (wasDisliked) {
+        setDislikedSlugs((prev) => {
+          const next = new Set(prev);
+          next.add(slug);
+          return next;
+        });
+      }
+    }
+  }, [activeProfile, dislikedSlugs, likedSlugs]);
+
+  const handleToggleDislike = useCallback(async (movie: Movie) => {
+    const slug = movie.id;
+    const isCurrentlyDisliked = dislikedSlugs.has(slug);
+    const wasLiked = likedSlugs.has(slug);
+    setDislikedSlugs((prev) => {
+      const next = new Set(prev);
+      if (isCurrentlyDisliked) next.delete(slug);
+      else next.add(slug);
+      return next;
+    });
+    if (!isCurrentlyDisliked) {
+      setLikedSlugs((prev) => {
+        const next = new Set(prev);
+        next.delete(slug);
+        return next;
+      });
+    }
+    try {
+      await fetch('/api/interactions/reactions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ profileId: activeProfile!.id, movieSlug: slug, value: isCurrentlyDisliked ? null : 'dislike' }) });
+    } catch {
+      setDislikedSlugs((prev) => {
+        const next = new Set(prev);
+        if (isCurrentlyDisliked) next.add(slug);
+        else next.delete(slug);
+        return next;
+      });
+      if (wasLiked) {
+        setLikedSlugs((prev) => {
+          const next = new Set(prev);
+          next.add(slug);
+          return next;
+        });
+      }
+    }
+  }, [activeProfile, dislikedSlugs, likedSlugs]);
+
   const handleExpand = useCallback((movie: Movie) => {
-    router.push(`/browse?jbv=${movie.id}`);
-  }, [router]);
+    setPreview(null);
+    setDetailMovie(movie);
+  }, []);
 
   const handlePlay = useCallback((movie: Movie) => {
     router.push(`/watch/${movie.id}`);
+  }, [router]);
+
+  const handlePlaySlug = useCallback((slug: string, episodeSlug?: string) => {
+    router.push(`/watch/${slug}${episodeSlug ? `?episode=${episodeSlug}` : ''}`);
   }, [router]);
 
   const handleLogout = useCallback(() => {
@@ -50,6 +174,23 @@ export default function SearchClient() {
     window.localStorage.removeItem("localflix.profiles");
     router.replace("/login");
   }, [router]);
+
+  const keepPreviewOpen = () => { if (previewHideTimer.current) window.clearTimeout(previewHideTimer.current); if (previewRemoveTimer.current) window.clearTimeout(previewRemoveTimer.current); };
+  const fadePreviewOut = (removeDelay = 300) => { if (previewOpenTimer.current) window.clearTimeout(previewOpenTimer.current); if (previewHideTimer.current) window.clearTimeout(previewHideTimer.current); if (previewRemoveTimer.current) window.clearTimeout(previewRemoveTimer.current); currentActivePopup.current = null; setPreview((v) => (v ? { ...v, active: false } : v)); previewRemoveTimer.current = window.setTimeout(() => setPreview(null), removeDelay); };
+  const closePreview = () => { if (previewOpenTimer.current) window.clearTimeout(previewOpenTimer.current); if (previewHideTimer.current) window.clearTimeout(previewHideTimer.current); previewHideTimer.current = window.setTimeout(() => fadePreviewOut(), 300); };
+  const closePreviewNow = () => { fadePreviewOut(); };
+  const openPreview = (movie: Movie, rect: DOMRect) => {
+    if (previewOpenTimer.current) window.clearTimeout(previewOpenTimer.current); if (previewHideTimer.current) window.clearTimeout(previewHideTimer.current); if (previewRemoveTimer.current) window.clearTimeout(previewRemoveTimer.current);
+    if (currentActivePopup.current && currentActivePopup.current !== movie.id) { setPreview((v) => (v ? { ...v, active: false } : v)); currentActivePopup.current = null; }
+    const width = Math.min(Math.max(window.innerWidth * 0.34, 360), 433, window.innerWidth - 32); const height = width * 0.5625 + 148;
+    const centeredLeft = rect.left + window.scrollX + rect.width / 2 - width / 2;
+    const left = Math.min(Math.max(window.scrollX + 16, centeredLeft), window.scrollX + window.innerWidth - width - 16);
+    const preferredTop = rect.top + window.scrollY - 52;
+    const top = Math.min(Math.max(window.scrollY + 76, preferredTop), Math.max(window.scrollY + 76, window.scrollY + window.innerHeight - height - 16));
+    previewOpenTimer.current = window.setTimeout(() => { currentActivePopup.current = movie.id; setPreview({ movie, top, left, width, active: true }); }, 450);
+  };
+
+  useEffect(() => { return () => { if (previewOpenTimer.current) window.clearTimeout(previewOpenTimer.current); if (previewHideTimer.current) window.clearTimeout(previewHideTimer.current); if (previewRemoveTimer.current) window.clearTimeout(previewRemoveTimer.current); }; }, []);
 
   if (!activeProfile) {
     return (
@@ -79,9 +220,15 @@ export default function SearchClient() {
           movies={movies}
           searching={searching}
           onExpand={handleExpand}
-          onPreview={() => {}}
-          onPreviewEnd={() => {}}
+          onPreview={openPreview}
+          onPreviewEnd={closePreview}
           onPlay={handlePlay}
+          favoriteSlugs={favoriteSlugs}
+          likedSlugs={likedSlugs}
+          dislikedSlugs={dislikedSlugs}
+          onToggleFavorite={handleToggleFavorite}
+          onToggleLike={handleToggleLike}
+          onToggleDislike={handleToggleDislike}
         />
       ) : (
         <section className="min-h-screen px-[4%] pt-[120px]">
@@ -90,6 +237,23 @@ export default function SearchClient() {
           </div>
         </section>
       )}
+      {preview ? (
+        <MiniPreviewModal preview={preview} onKeepOpen={keepPreviewOpen} onPreviewEnd={closePreviewNow} onExpand={handleExpand} favoriteSlugs={favoriteSlugs} likedSlugs={likedSlugs} dislikedSlugs={dislikedSlugs} onToggleFavorite={handleToggleFavorite} onToggleLike={handleToggleLike} onToggleDislike={handleToggleDislike} onPlay={handlePlay} />
+      ) : null}
+      {detailMovie ? (
+        <DetailModal
+          movie={detailMovie}
+          onClose={() => setDetailMovie(null)}
+          onSearch={(keyword) => { router.push(`/search?q=${encodeURIComponent(keyword)}`); }}
+          onPlay={handlePlaySlug}
+          isFavorite={favoriteSlugs.has(detailMovie.id)}
+          isLiked={likedSlugs.has(detailMovie.id)}
+          isDisliked={dislikedSlugs.has(detailMovie.id)}
+          onToggleFavorite={() => handleToggleFavorite(detailMovie)}
+          onToggleLike={() => handleToggleLike(detailMovie)}
+          onToggleDislike={() => handleToggleDislike(detailMovie)}
+        />
+      ) : null}
     </main>
   );
 }
