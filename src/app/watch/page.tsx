@@ -1,39 +1,13 @@
 "use client";
 
 import Hls from "hls.js";
-import { MouseEvent, useEffect, useMemo, useRef, useState } from "react";
+import { MouseEvent, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { getStoredActiveProfileId, getStoredSession } from "@/lib/session";
 
-const mockResponse = {
-  status: "success",
-  movie: {
-    id: "ccf2c17d9d1388d86d3bdb68bc85a49b",
-    name: "Lớp Học Tình Yêu (Phần 3)",
-    original_name: "Love Class (Season 3)",
-    total_episodes: 10,
-    current_episode: "Tập 2",
-    quality: "HD",
-    language: "Vietsub",
-    episodes: [
-      {
-        server_name: "Vietsub #1",
-        items: [
-          {
-            name: "1",
-            slug: "tap-1",
-            embed: "https://embed14.streamc.xyz/embed.php?hash=ae8eb61960fde2d826e0e467e803d0bf",
-            m3u8: "https://sing.phimmoi.net/ae8eb61960fde2d826e0e467e803d0bf/hls.m3u8",
-          },
-          {
-            name: "2",
-            slug: "tap-2",
-            embed: "https://embed11.streamc.xyz/embed.php?hash=62cf265c97dcf8ca1e086fe5cfc8b270",
-            m3u8: "https://sing.phimmoi.net/62cf265c97dcf8ca1e086fe5cfc8b270/hls.m3u8",
-          },
-        ],
-      },
-    ],
-  },
-};
+type EpisodeItem = { id: string; name: string; slug: string; serverName: string; embedUrl: string | null; m3u8Url: string | null };
+type MovieData = { slug: string; name: string; episodes?: EpisodeItem[] };
+type HistoryRow = { movieSlug: string; episodeSlug: string | null; serverName: string | null; progress: number | null; duration: number | null };
 
 type IconName = "back" | "flag" | "play" | "pause" | "rewind" | "forward" | "volume" | "muted" | "fullscreen" | "episodes" | "settings" | "check";
 
@@ -70,11 +44,26 @@ function formatTime(seconds: number) {
   return `${minutes.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
 }
 
-export default function WatchPage() {
+function getPlaybackProfileId() {
+  const session = getStoredSession();
+  if (!session?.profiles?.length) return null;
+  const activeProfileId = getStoredActiveProfileId();
+  return session.profiles.find((profile) => profile.id === activeProfileId)?.id || session.profiles[0].id;
+}
+
+function WatchPlayer() {
+  const searchParams = useSearchParams();
+  const movieSlug = searchParams.get("movie") || "";
+  const requestedEpisode = searchParams.get("episode") || "";
+
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const shellRef = useRef<HTMLDivElement | null>(null);
   const hideControlsTimer = useRef<number | null>(null);
-  const episodes = mockResponse.movie.episodes[0].items;
+  const progressSaveTimer = useRef<number | null>(null);
+
+  const [movieData, setMovieData] = useState<MovieData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [episodes, setEpisodes] = useState<EpisodeItem[]>([]);
   const [episodeIndex, setEpisodeIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [showControls, setShowControls] = useState(true);
@@ -86,9 +75,91 @@ export default function WatchPage() {
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
   const [showEpisodes, setShowEpisodes] = useState(false);
   const [error, setError] = useState("");
-  const activeEpisode = episodes[episodeIndex];
-  const title = `${mockResponse.movie.name} - Tập ${activeEpisode.name}`;
+  const [resumeProgress, setResumeProgress] = useState<number | null>(null);
+
+  // Fetch movie data from DB
+  useEffect(() => {
+    let cancelled = false;
+    const frame = window.requestAnimationFrame(() => {
+      if (!movieSlug) {
+        setLoading(false);
+        setError("Không có slug phim.");
+        return;
+      }
+
+      setLoading(true);
+      fetch(`/api/movies?slug=${encodeURIComponent(movieSlug)}&withEpisodes=true`)
+        .then((r) => r.json())
+        .then(async (data) => {
+          if (cancelled) return;
+          if (!data.movie) {
+            setError("Không tìm thấy phim.");
+            return;
+          }
+
+          const eps: EpisodeItem[] = data.movie.episodes || [];
+          const profileId = getPlaybackProfileId();
+          let historyRow: HistoryRow | null = null;
+
+          if (profileId) {
+            const historyRes = await fetch(`/api/interactions?profileId=${encodeURIComponent(profileId)}`).catch(() => null);
+            const historyData = historyRes ? await historyRes.json().catch(() => null) : null;
+            historyRow = historyData?.history?.find((row: HistoryRow) => row.movieSlug === movieSlug) || null;
+          }
+
+          let nextIndex = 0;
+          const requestedIndex = requestedEpisode ? eps.findIndex((episode) => episode.slug === requestedEpisode) : -1;
+          const historyIndex = historyRow?.episodeSlug ? eps.findIndex((episode) => episode.slug === historyRow?.episodeSlug) : -1;
+
+          if (requestedIndex >= 0) nextIndex = requestedIndex;
+          else if (historyIndex >= 0) nextIndex = historyIndex;
+
+          setMovieData(data.movie);
+          setEpisodes(eps);
+          setEpisodeIndex(nextIndex);
+
+          const savedProgress = historyRow?.progress || 0;
+          const savedDuration = historyRow?.duration || 0;
+          setResumeProgress(savedProgress > 30 && (!savedDuration || savedProgress < savedDuration * 0.9) ? savedProgress : null);
+        })
+        .catch(() => {
+          if (!cancelled) setError("Lỗi khi tải dữ liệu phim.");
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false);
+        });
+    });
+
+    return () => {
+      cancelled = true;
+      window.cancelAnimationFrame(frame);
+    };
+  }, [movieSlug, requestedEpisode]);
+
+  const activeEpisode = episodes[episodeIndex] || null;
+  const title = movieData ? `${movieData.name}${activeEpisode ? ` - Tập ${activeEpisode.name}` : ""}` : "Đang tải...";
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
+
+  // Save watch progress
+  const saveProgress = useCallback(() => {
+    if (!movieSlug || !videoRef.current) return;
+    const profileId = getPlaybackProfileId();
+    if (!profileId) return;
+    const video = videoRef.current;
+    if (video.currentTime < 5) return; // Don't save first 5 seconds
+    fetch("/api/interactions/history", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        profileId,
+        movieSlug,
+        episodeSlug: activeEpisode?.slug || null,
+        serverName: activeEpisode?.serverName || null,
+        progress: Math.floor(video.currentTime),
+        duration: Math.floor(video.duration || 0),
+      }),
+    }).catch(() => {});
+  }, [movieSlug, activeEpisode]);
 
   const timelineStyle = useMemo(
     () => ({
@@ -152,23 +223,36 @@ export default function WatchPage() {
     }
   };
 
+  // Load HLS source
   useEffect(() => {
     const video = videoRef.current;
-    if (!video) return;
+    if (!video || !activeEpisode) return;
 
-    setError("");
-    setCurrentTime(0);
-    setDuration(0);
-    setIsPlaying(false);
-    setShowControls(true);
+    const source = activeEpisode.m3u8Url;
+    if (!source) {
+      const frame = window.requestAnimationFrame(() => setError("Tập này chưa có link phát HLS."));
+      return () => window.cancelAnimationFrame(frame);
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      setError("");
+      setCurrentTime(0);
+      setDuration(0);
+      setIsPlaying(false);
+      setShowControls(true);
+    });
     video.pause();
     video.removeAttribute("src");
     video.load();
 
     let hls: Hls | null = null;
-    const source = activeEpisode.m3u8;
     if (Hls.isSupported()) {
-      hls = new Hls({ enableWorker: true });
+      hls = new Hls({
+        enableWorker: true,
+        maxBufferLength: 90,
+        maxMaxBufferLength: 90,
+        backBufferLength: 30,
+      });
       hls.loadSource(source);
       hls.attachMedia(video);
       hls.on(Hls.Events.ERROR, (_, data) => {
@@ -181,10 +265,12 @@ export default function WatchPage() {
     }
 
     return () => {
+      window.cancelAnimationFrame(frame);
       hls?.destroy();
     };
-  }, [activeEpisode.m3u8]);
+  }, [activeEpisode]);
 
+  // Video event listeners
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
@@ -192,16 +278,16 @@ export default function WatchPage() {
     video.muted = muted;
     video.playbackRate = speed;
 
-    const onPlay = () => {
-      setIsPlaying(true);
-      revealControls();
-    };
-    const onPause = () => {
-      setIsPlaying(false);
-      revealControls();
-    };
+    const onPlay = () => { setIsPlaying(true); revealControls(); };
+    const onPause = () => { setIsPlaying(false); revealControls(); saveProgress(); };
     const onTimeUpdate = () => setCurrentTime(video.currentTime);
-    const onLoadedMetadata = () => setDuration(video.duration || 0);
+    const onLoadedMetadata = () => {
+      setDuration(video.duration || 0);
+      if (resumeProgress) {
+        video.currentTime = resumeProgress;
+        setResumeProgress(null);
+      }
+    };
     const onDurationChange = () => setDuration(video.duration || 0);
 
     video.addEventListener("play", onPlay);
@@ -217,14 +303,46 @@ export default function WatchPage() {
       video.removeEventListener("loadedmetadata", onLoadedMetadata);
       video.removeEventListener("durationchange", onDurationChange);
     };
-  }, [muted, speed, volume]);
+  }, [muted, speed, volume, saveProgress, resumeProgress]);
+
+  // Periodic progress save every 10 seconds
+  useEffect(() => {
+    progressSaveTimer.current = window.setInterval(() => { if (isPlaying) saveProgress(); }, 10_000);
+    return () => { if (progressSaveTimer.current) window.clearInterval(progressSaveTimer.current); };
+  }, [isPlaying, saveProgress]);
+
+  // Save on page unload
+  useEffect(() => {
+    const onUnload = () => saveProgress();
+    window.addEventListener("beforeunload", onUnload);
+    return () => window.removeEventListener("beforeunload", onUnload);
+  }, [saveProgress]);
 
   useEffect(() => {
     hideControlsTimer.current = window.setTimeout(() => setShowControls(false), 3000);
-    return () => {
-      if (hideControlsTimer.current) window.clearTimeout(hideControlsTimer.current);
-    };
+    return () => { if (hideControlsTimer.current) window.clearTimeout(hideControlsTimer.current); };
   }, []);
+
+  if (loading) {
+    return (
+      <main className="fixed inset-0 grid place-items-center bg-black text-white">
+        <div className="text-lg">Đang tải phim...</div>
+      </main>
+    );
+  }
+
+  if (!activeEpisode || episodes.length === 0) {
+    return (
+      <main className="fixed inset-0 grid place-items-center bg-black text-white">
+        <div className="max-w-md text-center">
+          <div className="mb-4 text-lg">{error || "Phim này chưa có tập nào."}</div>
+          <button onClick={() => history.back()} className="rounded bg-white/20 px-6 py-2 hover:bg-white/30">Quay lại</button>
+        </div>
+      </main>
+    );
+  }
+
+  const serverName = activeEpisode.serverName || "Server";
 
   return (
     <main
@@ -240,7 +358,7 @@ export default function WatchPage() {
       </div>
 
       <header className={`absolute inset-x-0 top-0 flex h-24 items-center justify-between px-8 transition-opacity duration-300 ${showControls ? "opacity-100" : "opacity-0"}`}>
-        <button className="grid size-12 place-items-center rounded-full text-white transition hover:bg-white/10" type="button" aria-label="Quay lại" onClick={() => history.back()}>
+        <button className="grid size-12 place-items-center rounded-full text-white transition hover:bg-white/10" type="button" aria-label="Quay lại" onClick={() => { saveProgress(); history.back(); }}>
           <Icon name="back" />
         </button>
         <h1 className={`pointer-events-none absolute left-1/2 max-w-[60vw] -translate-x-1/2 truncate text-center text-[22px] font-medium transition-opacity duration-300 ${showControls ? "opacity-100" : "opacity-0"}`}>
@@ -258,12 +376,7 @@ export default function WatchPage() {
       ) : null}
 
       {!isPlaying ? (
-        <button
-          type="button"
-          aria-label="Phát video"
-          onClick={togglePlay}
-          className="absolute left-1/2 top-1/2 grid size-24 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-white/15 text-white backdrop-blur transition hover:scale-105 hover:bg-white/25"
-        >
+        <button type="button" aria-label="Phát video" onClick={togglePlay} className="absolute left-1/2 top-1/2 grid size-24 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-white/15 text-white backdrop-blur transition hover:scale-105 hover:bg-white/25">
           <Icon name="play" className="ml-1 h-12 w-12" />
         </button>
       ) : null}
@@ -294,25 +407,12 @@ export default function WatchPage() {
               <button
                 type="button"
                 aria-label={muted ? "Bật âm thanh" : "Tắt âm thanh"}
-                onClick={() => {
-                  const next = !muted;
-                  setMuted(next);
-                  if (videoRef.current) videoRef.current.muted = next;
-                }}
+                onClick={() => { const next = !muted; setMuted(next); if (videoRef.current) videoRef.current.muted = next; }}
                 className="grid size-11 place-items-center rounded-full transition hover:bg-white/10"
               >
                 <Icon name={muted || volume === 0 ? "muted" : "volume"} />
               </button>
-              <input
-                aria-label="Âm lượng"
-                type="range"
-                min="0"
-                max="1"
-                step="0.01"
-                value={muted ? 0 : volume}
-                onChange={(event) => updateVolume(Number(event.target.value))}
-                className="h-1 w-28 accent-[#e50914]"
-              />
+              <input aria-label="Âm lượng" type="range" min="0" max="1" step="0.01" value={muted ? 0 : volume} onChange={(event) => updateVolume(Number(event.target.value))} className="h-1 w-28 accent-[#e50914]" />
             </div>
           </div>
 
@@ -337,15 +437,12 @@ export default function WatchPage() {
             <div className="relative">
               {showEpisodes ? (
                 <div className="absolute bottom-14 right-0 w-72 overflow-hidden rounded bg-[#181818]/95 py-3 shadow-[0_8px_30px_rgba(0,0,0,.45)]">
-                  <div className="px-4 pb-2 text-[13px] text-[#b3b3b3]">{mockResponse.movie.episodes[0].server_name}</div>
+                  <div className="px-4 pb-2 text-[13px] text-[#b3b3b3]">{serverName}</div>
                   {episodes.map((episode, index) => (
                     <button
-                      key={episode.slug}
+                      key={episode.id}
                       type="button"
-                      onClick={() => {
-                        setEpisodeIndex(index);
-                        setShowEpisodes(false);
-                      }}
+                      onClick={() => { setEpisodeIndex(index); setShowEpisodes(false); }}
                       className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-white/10"
                     >
                       <span>Tập {episode.name}</span>
@@ -367,5 +464,13 @@ export default function WatchPage() {
         </div>
       </section>
     </main>
+  );
+}
+
+export default function WatchPage() {
+  return (
+    <Suspense fallback={<main className="fixed inset-0 grid place-items-center bg-black text-white"><div>Đang tải...</div></main>}>
+      <WatchPlayer />
+    </Suspense>
   );
 }
