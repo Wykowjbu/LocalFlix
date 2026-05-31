@@ -35,3 +35,20 @@ export function getStoredActiveProfileId(): string | null {
 export function saveStoredActiveProfileId(profileId: string): void {
   window.localStorage.setItem(ACTIVE_PROFILE_STORAGE_KEY, profileId);
 }
+
+const PROFILE_STORAGE_KEY = "localflix.profiles";
+
+export function getStoredProfiles(): Profile[] {
+  if (typeof window === "undefined") return [];
+  const session = getStoredSession();
+  if (session?.profiles?.length) return session.profiles;
+  const stored = window.localStorage.getItem(PROFILE_STORAGE_KEY);
+  if (!stored) return [];
+  try {
+    const parsed = JSON.parse(stored) as Profile[];
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : [];
+  } catch {
+    window.localStorage.removeItem(PROFILE_STORAGE_KEY);
+    return [];
+  }
+}

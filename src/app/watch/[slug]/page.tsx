@@ -1,5 +1,6 @@
 "use client";
 
+import { use } from "react";
 import Hls from "hls.js";
 import { MouseEvent, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
@@ -34,6 +35,16 @@ function Icon({ name, className = "h-7 w-7" }: { name: IconName; className?: str
   );
 }
 
+function embedAutoplayUrl(url: string) {
+  try {
+    const parsed = new URL(url);
+    parsed.searchParams.set("autoplay", "1");
+    return parsed.toString();
+  } catch {
+    return url;
+  }
+}
+
 function formatTime(seconds: number) {
   if (!Number.isFinite(seconds) || seconds <= 0) return "00:00";
   const total = Math.floor(seconds);
@@ -51,9 +62,8 @@ function getPlaybackProfileId() {
   return session.profiles.find((profile) => profile.id === activeProfileId)?.id || session.profiles[0].id;
 }
 
-function WatchPlayer() {
+function WatchPlayer({ movieSlug }: { movieSlug: string }) {
   const searchParams = useSearchParams();
-  const movieSlug = searchParams.get("movie") || "";
   const requestedEpisode = searchParams.get("episode") || "";
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -76,6 +86,7 @@ function WatchPlayer() {
   const [showEpisodes, setShowEpisodes] = useState(false);
   const [error, setError] = useState("");
   const [resumeProgress, setResumeProgress] = useState<number | null>(null);
+  const [playbackMode, setPlaybackMode] = useState<'hls' | 'embed'>('hls');
 
   // Fetch movie data from DB
   useEffect(() => {
@@ -146,7 +157,7 @@ function WatchPlayer() {
     const profileId = getPlaybackProfileId();
     if (!profileId) return;
     const video = videoRef.current;
-    if (video.currentTime < 5) return; // Don't save first 5 seconds
+    if (video.currentTime < 5) return;
     fetch("/api/interactions/history", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -230,9 +241,15 @@ function WatchPlayer() {
 
     const source = activeEpisode.m3u8Url;
     if (!source) {
-      const frame = window.requestAnimationFrame(() => setError("Tập này chưa có link phát HLS."));
-      return () => window.cancelAnimationFrame(frame);
+      if (activeEpisode.embedUrl) {
+        setPlaybackMode('embed');
+      } else {
+        setError("Tập này chưa có link phát.");
+      }
+      return;
     }
+
+    setPlaybackMode('hls');
 
     const frame = window.requestAnimationFrame(() => {
       setError("");
@@ -256,7 +273,13 @@ function WatchPlayer() {
       hls.loadSource(source);
       hls.attachMedia(video);
       hls.on(Hls.Events.ERROR, (_, data) => {
-        if (data.fatal) setError("Không thể tải luồng HLS này. Thử tập khác hoặc server khác.");
+        if (data.fatal) {
+          if (activeEpisode.embedUrl) {
+            setPlaybackMode('embed');
+          } else {
+            setError("Không thể tải luồng HLS này. Thử tập khác hoặc server khác.");
+          }
+        }
       });
     } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
       video.src = source;
@@ -347,26 +370,59 @@ function WatchPlayer() {
   return (
     <main
       ref={shellRef}
-      className={`fixed inset-0 h-screen w-screen overflow-hidden bg-black text-white ${showControls ? "cursor-default" : "cursor-none"}`}
-      onMouseMove={revealControls}
+      className={`fixed inset-0 h-screen w-screen overflow-hidden bg-black text-white ${playbackMode === 'embed' ? "cursor-default" : showControls ? "cursor-default" : "cursor-none"}`}
+      onMouseMove={playbackMode === 'embed' ? undefined : revealControls}
     >
-      <video ref={videoRef} className="h-full w-full bg-black object-contain" playsInline onClick={togglePlay} />
+      {playbackMode === 'embed' && activeEpisode?.embedUrl ? (
+        <iframe src={embedAutoplayUrl(activeEpisode.embedUrl)} className="h-full w-full" allowFullScreen allow="autoplay; fullscreen; encrypted-media" />
+      ) : (
+        <video ref={videoRef} className="h-full w-full bg-black object-contain" playsInline onClick={togglePlay} />
+      )}
 
-      <div className={`pointer-events-none absolute inset-0 transition-opacity duration-300 ${showControls ? "opacity-100" : "opacity-0"}`}>
-        <div className="absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-black/90 via-black/35 to-transparent" />
-        <div className="absolute inset-x-0 bottom-0 h-56 bg-gradient-to-t from-black/95 via-black/55 to-transparent" />
-      </div>
+      {playbackMode !== 'embed' ? (
+        <div className={`pointer-events-none absolute inset-0 transition-opacity duration-300 ${showControls ? "opacity-100" : "opacity-0"}`}>
+          <div className="absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-black/90 via-black/35 to-transparent" />
+          <div className="absolute inset-x-0 bottom-0 h-56 bg-gradient-to-t from-black/95 via-black/55 to-transparent" />
+        </div>
+      ) : null}
 
-      <header className={`absolute inset-x-0 top-0 flex h-24 items-center justify-between px-8 transition-opacity duration-300 ${showControls ? "opacity-100" : "opacity-0"}`}>
+      <header className={`absolute inset-x-0 top-0 flex h-24 items-center justify-between px-8 transition-opacity duration-300 ${playbackMode === 'embed' ? "opacity-100" : showControls ? "opacity-100" : "opacity-0"}`}>
         <button className="grid size-12 place-items-center rounded-full text-white transition hover:bg-white/10" type="button" aria-label="Quay lại" onClick={() => { saveProgress(); history.back(); }}>
           <Icon name="back" />
         </button>
-        <h1 className={`pointer-events-none absolute left-1/2 max-w-[60vw] -translate-x-1/2 truncate text-center text-[22px] font-medium transition-opacity duration-300 ${showControls ? "opacity-100" : "opacity-0"}`}>
-          {title}
-        </h1>
-        <button className="grid size-12 place-items-center rounded-full text-white transition hover:bg-white/10" type="button" aria-label="Báo cáo lỗi">
-          <Icon name="flag" />
-        </button>
+        {playbackMode === 'embed' ? (
+          <div className="relative">
+            <button type="button" aria-label="Danh sách tập" onClick={() => setShowEpisodes((v) => !v)} className="flex h-11 items-center gap-2 rounded-full px-3 transition hover:bg-white/10">
+              <Icon name="episodes" />
+              <span className="text-[14px]">Tập phim</span>
+            </button>
+            {showEpisodes ? (
+              <div className="absolute right-0 top-14 w-72 overflow-hidden rounded bg-[#181818]/95 py-3 shadow-[0_8px_30px_rgba(0,0,0,.45)] z-50">
+                <div className="px-4 pb-2 text-[13px] text-[#b3b3b3]">{serverName}</div>
+                {episodes.map((episode, index) => (
+                  <button
+                    key={episode.id}
+                    type="button"
+                    onClick={() => { setEpisodeIndex(index); setShowEpisodes(false); }}
+                    className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-white/10"
+                  >
+                    <span>Tập {episode.name}</span>
+                    {episodeIndex === index ? <Icon name="check" className="h-4 w-4 text-[#46d369]" /> : null}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ) : (
+          <>
+            <h1 className={`pointer-events-none absolute left-1/2 max-w-[60vw] -translate-x-1/2 truncate text-center text-[22px] font-medium transition-opacity duration-300 ${showControls ? "opacity-100" : "opacity-0"}`}>
+              {title}
+            </h1>
+            <button className="grid size-12 place-items-center rounded-full text-white transition hover:bg-white/10" type="button" aria-label="Báo cáo lỗi">
+              <Icon name="flag" />
+            </button>
+          </>
+        )}
       </header>
 
       {error ? (
@@ -375,13 +431,14 @@ function WatchPlayer() {
         </div>
       ) : null}
 
-      {!isPlaying ? (
+      {!isPlaying && playbackMode !== 'embed' ? (
         <button type="button" aria-label="Phát video" onClick={togglePlay} className="absolute left-1/2 top-1/2 grid size-24 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-white/15 text-white backdrop-blur transition hover:scale-105 hover:bg-white/25">
           <Icon name="play" className="ml-1 h-12 w-12" />
         </button>
       ) : null}
 
-      <section className={`absolute inset-x-0 bottom-0 px-8 pb-8 transition-opacity duration-300 ${showControls ? "opacity-100" : "opacity-0"}`}>
+      {playbackMode !== 'embed' ? (
+        <section className={`absolute inset-x-0 bottom-0 px-8 pb-8 transition-opacity duration-300 ${showControls ? "opacity-100" : "opacity-0"}`}>
         <div className="mb-5 flex items-center gap-4">
           <button className="group relative h-5 flex-1 cursor-pointer" type="button" aria-label="Tua video" onClick={seekToPercent}>
             <span className="absolute left-0 top-1/2 h-1 w-full -translate-y-1/2 rounded-full" style={timelineStyle} />
@@ -463,14 +520,17 @@ function WatchPlayer() {
           </div>
         </div>
       </section>
+      ) : null}
     </main>
   );
 }
 
-export default function WatchPage() {
+export default function WatchPage({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = use(params);
+
   return (
     <Suspense fallback={<main className="fixed inset-0 grid place-items-center bg-black text-white"><div>Đang tải...</div></main>}>
-      <WatchPlayer />
+      <WatchPlayer movieSlug={slug} />
     </Suspense>
   );
 }
