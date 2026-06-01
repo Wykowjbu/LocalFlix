@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import Image from "next/image";
 import Icon from "./icon";
 import RoundButton from "./round-button";
@@ -17,6 +17,24 @@ type MovieDetail = {
   tags?: { name: string; group: string }[]; episodes?: DetailEpisode[];
 };
 
+function DetailSkeleton() {
+  return (
+    <>
+      <div className="space-y-2">
+        <div className="h-4 w-full animate-pulse rounded bg-[#333]" />
+        <div className="h-4 w-5/6 animate-pulse rounded bg-[#333]" />
+        <div className="h-4 w-4/6 animate-pulse rounded bg-[#333]" />
+        <div className="h-4 w-3/6 animate-pulse rounded bg-[#333]" />
+      </div>
+      <aside className="space-y-3">
+        <div className="h-4 w-32 animate-pulse rounded bg-[#333]" />
+        <div className="h-4 w-36 animate-pulse rounded bg-[#333]" />
+        <div className="h-4 w-28 animate-pulse rounded bg-[#333]" />
+      </aside>
+    </>
+  );
+}
+
 export default function DetailModal({
   movie, closing, onClose, onSearch, onPlay, isFavorite, isLiked, isDisliked, onToggleFavorite, onToggleLike, onToggleDislike,
 }: {
@@ -27,6 +45,41 @@ export default function DetailModal({
 }) {
   const [detail, setDetail] = useState<MovieDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [retryKey, setRetryKey] = useState(0);
+  const detailCache = useRef<Map<string, MovieDetail>>(new Map());
+
+  useEffect(() => {
+    const cancelled = { current: false };
+
+    const cached = detailCache.current.get(movie.id);
+    if (cached) {
+      setDetail(cached);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    fetch(`/api/movies?slug=${encodeURIComponent(movie.id)}&withEpisodes=true`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (!cancelled.current && data.movie) {
+          setDetail(data.movie);
+          detailCache.current.set(movie.id, data.movie);
+        }
+      })
+      .catch(() => {
+        if (!cancelled.current) setError("Không tải được chi tiết phim");
+      })
+      .finally(() => {
+        if (!cancelled.current) setLoading(false);
+      });
+
+    return () => { cancelled.current = true; };
+  }, [movie.id, retryKey]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
@@ -35,33 +88,13 @@ export default function DetailModal({
     return () => { window.removeEventListener("keydown", onKeyDown); document.body.style.overflow = ""; };
   }, [onClose]);
 
-  useEffect(() => {
-    let cancelled = false;
-    const frame = window.requestAnimationFrame(() => {
-      setLoading(true);
-      fetch(`/api/movies?slug=${encodeURIComponent(movie.id)}&withEpisodes=true`)
-        .then((r) => r.json())
-        .then((data) => {
-          if (!cancelled && data.movie) setDetail(data.movie);
-        })
-        .catch(() => {})
-        .finally(() => {
-          if (!cancelled) setLoading(false);
-        });
-    });
-
-    return () => {
-      cancelled = true;
-      window.cancelAnimationFrame(frame);
-    };
-  }, [movie.id]);
-
   const episodes = detail?.episodes || [];
   const casts = detail?.casts || "";
   const director = detail?.director || "";
   const description = detail?.description || "";
   const genres = detail?.tags?.filter((t) => t.group === "Thể loại").map((t) => t.name) || movie.genres;
   const totalEps = detail?.totalEpisodes;
+  const isFetching = loading && !detail;
 
   return (
     <div className={`fixed inset-0 z-[80] overflow-y-auto bg-black/70 px-3 py-8 md:px-8 ${closing ? 'pointer-events-none' : ''}`} onMouseDown={onClose}>
@@ -92,33 +125,46 @@ export default function DetailModal({
         </div>
 
         <div className="grid gap-8 px-[clamp(20px,4vw,48px)] py-8 md:grid-cols-[minmax(0,1fr)_250px]">
-          <div>
-            <div className="mb-4 flex flex-wrap items-center gap-3 text-sm text-[#e5e5e5]">
-              <span className="font-bold text-[#46d369]">{movie.match}% phù hợp</span>
-              {totalEps && <span>{totalEps} tập</span>}
-              <QualityBadge quality={detail?.quality || movie.quality} />
-              <MaturityBadge rating={movie.maturity} />
-              {detail?.language && <span>{detail.language}</span>}
-            </div>
-            <p className="text-[clamp(15px,1.5vw,18px)] leading-relaxed text-white">
-              {loading ? "Đang tải..." : (description || "Chưa có mô tả.")}
-            </p>
-          </div>
-          <aside className="space-y-3 text-sm leading-relaxed text-white">
-            {casts && (
-              <p><span className="text-[#777777]">Diễn viên: </span>
-                {casts.split(",").map((cast, i) => (<span key={i}>{i > 0 && ", "}<button type="button" className="cursor-pointer text-white underline-offset-2 hover:underline" onClick={() => { onSearch?.(cast.trim()); onClose(); }}>{cast.trim()}</button></span>))}
-              </p>
-            )}
-            <p><span className="text-[#777777]">Thể loại: </span>
-              {genres.map((genre, i) => (<span key={i}>{i > 0 && ", "}<button type="button" className="cursor-pointer text-white underline-offset-2 hover:underline" onClick={() => { onSearch?.(genre); onClose(); }}>{genre}</button></span>))}
-            </p>
-            {director && (
-              <p><span className="text-[#777777]">Đạo diễn: </span>
-                <button type="button" className="cursor-pointer text-white underline-offset-2 hover:underline" onClick={() => { onSearch?.(director); onClose(); }}>{director}</button>
-              </p>
-            )}
-          </aside>
+          {isFetching ? <DetailSkeleton /> : (
+            <>
+              <div>
+                <div className="mb-4 flex flex-wrap items-center gap-3 text-sm text-[#e5e5e5]">
+                  <span className="font-bold text-[#46d369]">{movie.match}% phù hợp</span>
+                  {totalEps && <span>{totalEps} tập</span>}
+                  <QualityBadge quality={detail?.quality || movie.quality} />
+                  <MaturityBadge rating={movie.maturity} />
+                  {detail?.language && <span>{detail.language}</span>}
+                </div>
+                {error ? (
+                  <div>
+                    <p className="text-gray-400">{error}</p>
+                    <button type="button" onClick={() => setRetryKey((k) => k + 1)} className="mt-3 cursor-pointer rounded bg-white px-4 py-1.5 text-sm font-bold text-black transition-colors hover:bg-gray-200">
+                      Thử lại
+                    </button>
+                  </div>
+                ) : (
+                  <p className="text-[clamp(15px,1.5vw,18px)] leading-relaxed text-white">
+                    {description || "Chưa có mô tả."}
+                  </p>
+                )}
+              </div>
+              <aside className="space-y-3 text-sm leading-relaxed text-white">
+                {casts && (
+                  <p><span className="text-[#777777]">Diễn viên: </span>
+                    {casts.split(",").map((cast, i) => (<span key={i}>{i > 0 && ", "}<button type="button" className="cursor-pointer text-white underline-offset-2 hover:underline" onClick={() => { onSearch?.(cast.trim()); onClose(); }}>{cast.trim()}</button></span>))}
+                  </p>
+                )}
+                <p><span className="text-[#777777]">Thể loại: </span>
+                  {genres.map((genre, i) => (<span key={i}>{i > 0 && ", "}<button type="button" className="cursor-pointer text-white underline-offset-2 hover:underline" onClick={() => { onSearch?.(genre); onClose(); }}>{genre}</button></span>))}
+                </p>
+                {director && (
+                  <p><span className="text-[#777777]">Đạo diễn: </span>
+                    <button type="button" className="cursor-pointer text-white underline-offset-2 hover:underline" onClick={() => { onSearch?.(director); onClose(); }}>{director}</button>
+                  </p>
+                )}
+              </aside>
+            </>
+          )}
         </div>
 
         {episodes.length > 0 && (

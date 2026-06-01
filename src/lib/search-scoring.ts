@@ -18,6 +18,34 @@ export function tokenize(str: string): string[] {
   return normalizeForSearch(str).split(' ').filter(Boolean);
 }
 
+export function generateSearchText(
+  name: string,
+  originalName: string | null | undefined,
+  slug: string,
+): string {
+  const parts = [
+    normalizeForSearch(name),
+    originalName ? normalizeForSearch(originalName) : '',
+    slug,
+  ].filter(Boolean);
+  return parts.join(' ');
+}
+
+export function generateSearchTextWithTags(
+  name: string,
+  originalName: string | null | undefined,
+  slug: string,
+  tags: { name: string }[],
+): string {
+  const parts = [
+    normalizeForSearch(name),
+    originalName ? normalizeForSearch(originalName) : '',
+    slug,
+    ...tags.map((t) => normalizeForSearch(t.name)),
+  ].filter(Boolean);
+  return parts.join(' ');
+}
+
 export type ScorableMovie = {
   name: string;
   originalName?: string | null;
@@ -52,43 +80,80 @@ export function scoreMovie(
     .join(' ');
 
   const normalizedFields = normalizeForSearch(searchableFields);
-  const fieldTokens = tokenize(searchableFields);
 
   let score = 0;
 
-  // Exact name match
   if (normalizedName === normalizedQuery) score += 100;
-
-  // Slug matches query
   if (normalizedSlug === normalizedQuery) score += 95;
-
-  // Name starts with query
   if (normalizedName.startsWith(normalizedQuery)) score += 70;
-
-  // Original name exact match
   if (normalizedOriginal === normalizedQuery) score += 60;
-
-  // Original name starts with query
   if (normalizedOriginal.startsWith(normalizedQuery)) score += 55;
-
-  // Contains full phrase in name
   if (normalizedName.includes(normalizedQuery)) score += 50;
-
-  // Original name contains full phrase
   if (normalizedOriginal.includes(normalizedQuery)) score += 45;
 
-  // Individual token matches in name
   for (const token of queryTokens) {
     if (normalizedName.includes(token)) score += 10;
   }
 
-  // Match in auxiliary fields (cast, genre, director, etc.)
-  const fullPhraseInFields = normalizedFields.includes(normalizedQuery);
-  if (fullPhraseInFields) score += 20;
-
-  // Partial match in auxiliary fields
+  if (normalizedFields.includes(normalizedQuery)) score += 20;
   for (const token of queryTokens) {
     if (normalizedFields.includes(token)) score += 3;
+  }
+
+  return score;
+}
+
+// Lightweight search types for optimized search flow
+export type SearchMovieLight = {
+  slug: string;
+  name: string;
+  originalName: string | null;
+  tags: { tag: { name: string; group: { name: string } } }[];
+};
+
+export type PreparedMovie = {
+  movie: SearchMovieLight;
+  normName: string;
+  normOriginal: string;
+  normTags: string;
+};
+
+export function prepareMovie(movie: SearchMovieLight): PreparedMovie {
+  return {
+    movie,
+    normName: normalizeForSearch(movie.name),
+    normOriginal: movie.originalName ? normalizeForSearch(movie.originalName) : '',
+    normTags: normalizeForSearch(
+      (movie.tags ?? [])
+        .flatMap((mt) => [mt.tag.name, mt.tag.group.name])
+        .join(' ')
+    ),
+  };
+}
+
+export function scorePrepared(
+  item: PreparedMovie,
+  normalizedQuery: string,
+  queryTokens: string[]
+): number {
+  const { normName, normOriginal, movie } = item;
+  let score = 0;
+
+  if (normName === normalizedQuery) score += 100;
+  if (movie.slug === normalizedQuery) score += 95;
+  if (normName.startsWith(normalizedQuery)) score += 70;
+  if (normOriginal === normalizedQuery) score += 60;
+  if (normOriginal.startsWith(normalizedQuery)) score += 55;
+  if (normName.includes(normalizedQuery)) score += 50;
+  if (normOriginal.includes(normalizedQuery)) score += 45;
+
+  for (const token of queryTokens) {
+    if (normName.includes(token)) score += 10;
+  }
+
+  if (item.normTags.includes(normalizedQuery)) score += 20;
+  for (const token of queryTokens) {
+    if (item.normTags.includes(token)) score += 3;
   }
 
   return score;

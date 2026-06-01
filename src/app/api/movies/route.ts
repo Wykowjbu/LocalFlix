@@ -1,10 +1,19 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
-import { normalizeForSearch, tokenize, scoreMovie } from '@/lib/search-scoring';
+import { normalizeForSearch, tokenize, prepareMovie, scorePrepared } from '@/lib/search-scoring';
 
-// ============================================================
-// Shared movie formatter
-// ============================================================
+// Light select for list/search (no heavy fields)
+const LIST_MOVIE_SELECT = {
+  slug: true, name: true, originalName: true,
+  thumbUrl: true, posterUrl: true, time: true, quality: true,
+  tags: { select: { tag: { select: { name: true, group: { select: { name: true } } } } } },
+} as const;
+
+// Full select for detail mode
+const DETAIL_MOVIE_INCLUDE = {
+  episodes: { select: { id: true } },
+  tags: { include: { tag: { include: { group: true } } } },
+} as const;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function formatMovie(m: any, options?: { withEpisodes?: boolean }) {
@@ -45,6 +54,24 @@ function formatMovie(m: any, options?: { withEpisodes?: boolean }) {
   }
 
   return base;
+}
+
+// Light formatter for search/list results (no heavy text fields)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function formatListMovie(m: any) {
+  return {
+    slug: m.slug,
+    name: m.name,
+    originalName: m.originalName,
+    thumbUrl: m.thumbUrl,
+    posterUrl: m.posterUrl,
+    time: m.time,
+    quality: m.quality,
+    tags: m.tags?.map((mt: { tag: { name: string; group: { name: string } } }) => ({
+      name: mt.tag.name,
+      group: mt.tag.group.name,
+    })) ?? [],
+  };
 }
 
 // ============================================================
@@ -97,20 +124,26 @@ export async function GET(request: NextRequest) {
 
   // ---- My List (favorites) ----
   if (favoritesProfileId) {
+    const isDev = process.env.NODE_ENV === 'development';
+    if (isDev) console.time('/api/movies favorites');
+
     const favorites = await prisma.favorite.findMany({
       where: { profileId: favoritesProfileId },
       orderBy: { createdAt: 'desc' },
-      include: {
+      select: {
         movie: {
-          include: {
-            episodes: { select: { id: true } },
-            tags: { include: { tag: { include: { group: true } } } },
-          },
+          select: LIST_MOVIE_SELECT,
         },
       },
     });
 
-    const movies = favorites.map((f) => formatMovie(f.movie));
+    const movies = favorites.map((f) => formatListMovie(f.movie));
+
+    if (isDev) {
+      console.timeEnd('/api/movies favorites');
+      console.log('  favorites count:', movies.length);
+    }
+
     return Response.json({ movies, total: movies.length, page: 1, limit: movies.length });
   }
 
@@ -137,6 +170,43 @@ export async function GET(request: NextRequest) {
       serverName: h.serverName,
     }));
     return Response.json({ movies, total: movies.length, page: 1, limit: movies.length });
+  }
+
+  // ---- Genre / Tag filter ----
+  const genre = searchParams.get('genre');
+  if (genre) {
+    const isDev = process.env.NODE_ENV === 'development';
+    if (isDev) console.time(`/api/movies genre=${genre}`);
+
+    const tag = await prisma.tag.findFirst({
+      where: { slug: genre, group: { name: 'Thể loại' } },
+    });
+
+    if (!tag) {
+      return Response.json({ error: `Genre '${genre}' not found` }, { status: 404 });
+    }
+
+    const [movies, total] = await Promise.all([
+      prisma.movie.findMany({
+        where: { tags: { some: { tagId: tag.id } } },
+        select: LIST_MOVIE_SELECT,
+        orderBy: { updatedAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      prisma.movie.count({
+        where: { tags: { some: { tagId: tag.id } } },
+      }),
+    ]);
+
+    const formatted = movies.map((m) => formatListMovie(m));
+
+    if (isDev) {
+      console.timeEnd(`/api/movies genre=${genre}`);
+      console.log(`  genre='${tag.name}' (${genre}) total:`, total);
+    }
+
+    return Response.json({ movies: formatted, genre: { name: tag.name, slug: tag.slug }, total, page, limit });
   }
 
   // ---- Collection mode ----
@@ -184,116 +254,129 @@ export async function GET(request: NextRequest) {
     return Response.json({ movies: formatted, total, page, limit });
   }
 
-  // ---- Search mode with normalized matching ----
-  if (query) {
-    const queryTokens = tokenize(query);
-    const normalizedQuery = normalizeForSearch(query);
+  // ---- Search mode with DB pre-filter + lightweight scoring ----
+    if (query) {
+     const isDev = process.env.NODE_ENV === 'development';
+     if (isDev) console.time('/api/movies search');
 
-    if (queryTokens.length === 0) {
-      return Response.json({ movies: [], total: 0, page, limit });
-    }
+     const normalizedQuery = normalizeForSearch(query);
+     const queryTokens = tokenize(query);
 
-    const candidates = await prisma.movie.findMany({
-      include: {
-        episodes: { select: { id: true } },
-        tags: {
-          include: {
-            tag: { include: { group: true } },
-          },
-        },
-      },
-    });
+     if (queryTokens.length === 0) {
+       return Response.json({ movies: [], total: 0, page, limit });
+     }
 
-    type ScoredMovie = { movie: typeof candidates[number]; score: number };
-    const scored: ScoredMovie[] = [];
+     // DB-level filter: match normalized tokens against searchText
+     const dbFilter = queryTokens.length > 0
+       ? { AND: queryTokens.map((t) => ({
+           searchText: { contains: t },
+         })) }
+       : {};
 
-    for (const m of candidates) {
-      const score = scoreMovie(m, normalizedQuery, queryTokens);
+     if (isDev) console.time('  db fetch');
+     const candidates = await prisma.movie.findMany({
+       where: dbFilter,
+       take: 500,
+       select: LIST_MOVIE_SELECT,
+       orderBy: { updatedAt: 'desc' },
+     });
+     if (isDev) {
+       console.timeEnd('  db fetch');
+       console.log('  candidates before scoring:', candidates.length);
+     }
+
+    if (isDev) console.time('  scoring');
+    const prepared = candidates.map(prepareMovie);
+    const scored: Array<{ movie: typeof prepared[number]['movie']; score: number }> = [];
+
+    for (const item of prepared) {
+      const score = scorePrepared(item, normalizedQuery, queryTokens);
       if (score > 0) {
-        scored.push({ movie: m, score });
+        scored.push({ movie: item.movie, score });
       }
     }
+    if (isDev) console.timeEnd('  scoring');
 
     scored.sort((a, b) => b.score - a.score);
 
     const total = scored.length;
     const paged = scored.slice(skip, skip + limit);
-    const formatted = paged.map((s) => formatMovie(s.movie));
+    const formatted = paged.map((s) => formatListMovie(s.movie));
+    const json = JSON.stringify({ movies: formatted, total, page, limit });
 
-    return Response.json({ movies: formatted, total, page, limit });
+    if (isDev) {
+      console.timeEnd('/api/movies search');
+      console.log('  matched:', total, '| response size:', json.length, 'bytes');
+    }
+
+    return new Response(json, { status: 200, headers: { 'Content-Type': 'application/json' } });
   }
 
   // ---- Filter by type (phim-le / phim-bo) ----
   const type = searchParams.get('type');
   if (type === 'phim-le' || type === 'phim-bo') {
+    const isDev = process.env.NODE_ENV === 'development';
+    if (isDev) console.time(`/api/movies type=${type}`);
+
     const isSeries = type === 'phim-bo';
-    const movies = await prisma.movie.findMany({
-      where: {
-        totalEpisodes: isSeries ? { gt: 1 } : { lte: 1 },
-      },
-      include: {
-        episodes: { select: { id: true } },
-        tags: { include: { tag: { include: { group: true } } } },
-      },
-      orderBy: { updatedAt: 'desc' },
-      skip,
-      take: limit,
-    });
+    const [movies, total] = await Promise.all([
+      prisma.movie.findMany({
+        where: { totalEpisodes: isSeries ? { gt: 1 } : { lte: 1 } },
+        select: LIST_MOVIE_SELECT,
+        orderBy: { updatedAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      prisma.movie.count({ where: { totalEpisodes: isSeries ? { gt: 1 } : { lte: 1 } } }),
+    ]);
 
-    const total = await prisma.movie.count({
-      where: {
-        totalEpisodes: isSeries ? { gt: 1 } : { lte: 1 },
-      },
-    });
+    const formatted = movies.map((m) => formatListMovie(m));
 
-    const formatted = movies.map((m) => formatMovie(m));
+    if (isDev) {
+      console.timeEnd(`/api/movies type=${type}`);
+      console.log(`  type=${type} total:`, total);
+    }
+
     return Response.json({ movies: formatted, total, page, limit });
   }
 
   // ---- Sort by newest ----
   const sort = searchParams.get('sort');
   if (sort === 'newest') {
-    const movies = await prisma.movie.findMany({
-      orderBy: { updatedAt: 'desc' },
-      include: {
-        episodes: { select: { id: true } },
-        tags: { include: { tag: { include: { group: true } } } },
-      },
-      skip,
-      take: limit,
-    });
+    const isDev = process.env.NODE_ENV === 'development';
+    if (isDev) console.time('/api/movies sort=newest');
 
-    const total = await prisma.movie.count();
-    const formatted = movies.map((m) => formatMovie(m));
+    const [movies, total] = await Promise.all([
+      prisma.movie.findMany({
+        orderBy: { updatedAt: 'desc' },
+        select: LIST_MOVIE_SELECT,
+        skip,
+        take: limit,
+      }),
+      prisma.movie.count(),
+    ]);
+
+    const formatted = movies.map((m) => formatListMovie(m));
+
+    if (isDev) {
+      console.timeEnd('/api/movies sort=newest');
+      console.log('  sort=newest total:', total);
+    }
+
     return Response.json({ movies: formatted, total, page, limit });
   }
 
-  // ---- Default: all movies ----
-  const searchWhere = {};
-
+  // ---- Default: all movies (paginated) ----
   const [movies, total] = await Promise.all([
     prisma.movie.findMany({
-      where: searchWhere,
       orderBy: [{ lastSyncedAt: 'desc' }, { sourceModifiedAt: 'desc' }],
-      include: {
-        episodes: {
-          select: { id: true },
-        },
-        tags: {
-          include: {
-            tag: {
-              include: { group: true },
-            },
-          },
-        },
-      },
+      select: LIST_MOVIE_SELECT,
       skip,
       take: limit,
     }),
-    prisma.movie.count({ where: searchWhere }),
+    prisma.movie.count(),
   ]);
 
-  const formatted = movies.map((m) => formatMovie(m));
-
+  const formatted = movies.map((m) => formatListMovie(m));
   return Response.json({ movies: formatted, total, page, limit });
 }

@@ -35,18 +35,6 @@ export default function MyListClient() {
     setActiveProfile(profile);
   }, [router]);
 
-  useEffect(() => {
-    if (!activeProfile) return;
-    setLoading(true);
-    fetch(`/api/movies?favoritesProfileId=${activeProfile.id}`)
-      .then((res) => res.json())
-      .then((data) => {
-        setMovies(data.movies ? (data.movies as DbMovie[]).map(mapDbMovie) : []);
-      })
-      .catch(() => setMovies([]))
-      .finally(() => setLoading(false));
-  }, [activeProfile]);
-
   const loadInteractions = useCallback(async (profileId: string) => {
     try {
       const res = await fetch(`/api/interactions?profileId=${profileId}`);
@@ -58,7 +46,17 @@ export default function MyListClient() {
   }, []);
 
   useEffect(() => {
-    if (activeProfile) loadInteractions(activeProfile.id);
+    if (!activeProfile) return;
+    setLoading(true);
+    Promise.all([
+      fetch(`/api/movies?favoritesProfileId=${activeProfile.id}`).then((res) => res.json()),
+      loadInteractions(activeProfile.id),
+    ])
+      .then(([data]) => {
+        setMovies(data.movies ? (data.movies as DbMovie[]).map(mapDbMovie) : []);
+      })
+      .catch(() => setMovies([]))
+      .finally(() => setLoading(false));
   }, [activeProfile, loadInteractions]);
 
   const handleToggleFavorite = useCallback(async (movie: Movie) => {

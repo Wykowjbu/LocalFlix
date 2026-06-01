@@ -9,7 +9,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "clean": "if exist .next rmdir /s /q .next"
+    "clean": "if exist .next rmdir /s /q .next",
+    "db:backfill-searchtext": "npx tsx src/scripts/backfill-searchtext.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",

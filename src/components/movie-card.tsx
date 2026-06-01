@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import Image from "next/image";
 import Icon from "./icon";
 import RoundButton from "./round-button";
@@ -7,7 +8,7 @@ import MaturityBadge from "./maturity-badge";
 import QualityBadge from "./quality-badge";
 import type { Movie } from "@/data/netflix";
 
-export default function MovieCard({
+export default memo(function MovieCard({
   movie,
   onExpand,
   onPreview,
@@ -100,4 +101,4 @@ export default function MovieCard({
       )}
     </article>
   );
-}
+});

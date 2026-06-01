@@ -18,7 +18,7 @@ type HomeRowData = {
   id: string;
   title: string;
   variant?: 'top10' | 'standard';
-  movies: Record<string, unknown>[];
+  movies: Movie[];
 };
 
 export default function Browse({ activeProfile, onProfileChange }: { activeProfile: Profile; onProfileChange: (profile: Profile) => void }) {
@@ -29,8 +29,8 @@ export default function Browse({ activeProfile, onProfileChange }: { activeProfi
   const [preview, setPreview] = useState<PreviewState | null>(null);
   const [seeding, setSeeding] = useState(false);
   const [seedResult, setSeedResult] = useState<string | null>(null);
+  const [isHomeLoading, setIsHomeLoading] = useState(true);
   const [homeRows, setHomeRows] = useState<HomeRowData[]>([]);
-  const [dbCollections, setDbCollections] = useState<{ slug: string; name: string }[]>([]);
   const [favoriteSlugs, setFavoriteSlugs] = useState<Set<string>>(new Set());
   const [likedSlugs, setLikedSlugs] = useState<Set<string>>(new Set());
   const [dislikedSlugs, setDislikedSlugs] = useState<Set<string>>(new Set());
@@ -50,19 +50,23 @@ export default function Browse({ activeProfile, onProfileChange }: { activeProfi
   }, []);
 
   const loadHomeRows = useCallback(async (profileId: string) => {
+    setIsHomeLoading(true);
     try {
       const res = await fetch(`/api/home-rows?profileId=${profileId}`);
       const data = await res.json();
-      if (data.rows) setHomeRows(data.rows);
+      if (data.rows) {
+        const mapped: HomeRowData[] = data.rows.map((row: { id: string; title: string; variant?: string; movies: Record<string, unknown>[] }) => ({
+          id: row.id,
+          title: row.title,
+          variant: row.variant as 'top10' | 'standard' | undefined,
+          movies: row.movies.map((m) => mapDbMovie(m as DbMovie)),
+        }));
+        setHomeRows(mapped);
+      }
     } catch (err) {
       console.error('Lỗi khi tải home rows:', err);
-      // Fallback to static collections
-      fetch('/api/collections')
-        .then((r) => r.json())
-        .then((colData) => {
-          if (colData.collections) setDbCollections(colData.collections);
-        })
-        .catch(() => {});
+    } finally {
+      setIsHomeLoading(false);
     }
   }, []);
 
@@ -85,7 +89,6 @@ export default function Browse({ activeProfile, onProfileChange }: { activeProfi
     });
     try {
       await fetch('/api/interactions/favorites', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ profileId: activeProfile.id, movieSlug: slug, enabled: !isCurrentlyFav }) });
-      loadHomeRows(activeProfile.id);
     } catch {
       setFavoriteSlugs((prev) => {
         const next = new Set(prev);
@@ -94,7 +97,7 @@ export default function Browse({ activeProfile, onProfileChange }: { activeProfi
         return next;
       });
     }
-  }, [activeProfile.id, favoriteSlugs, loadHomeRows]);
+  }, [activeProfile.id, favoriteSlugs]);
 
   const handleToggleLike = useCallback(async (movie: Movie) => {
     const slug = movie.id;
@@ -231,7 +234,7 @@ export default function Browse({ activeProfile, onProfileChange }: { activeProfi
 
   useEffect(() => { return () => { if (previewOpenTimer.current) window.clearTimeout(previewOpenTimer.current); if (previewHideTimer.current) window.clearTimeout(previewHideTimer.current); if (previewRemoveTimer.current) window.clearTimeout(previewRemoveTimer.current); }; }, []);
 
-  const heroMovie = homeRows.length > 0 ? (homeRows[0].movies[0] ? ({ id: homeRows[0].movies[0].slug as string, title: homeRows[0].movies[0].name as string, image: (homeRows[0].movies[0].posterUrl || homeRows[0].movies[0].thumbUrl || '/placeholder.jpg') as string, match: 85, maturity: 'T16', duration: '45 phút', quality: 'HD', genres: [], isNew: false } as Movie) : null) : null;
+  const heroMovie = homeRows.length > 0 ? (homeRows[0].movies[0] ?? null) : null;
   const interactionProps = { favoriteSlugs, likedSlugs, dislikedSlugs, onToggleFavorite: handleToggleFavorite, onToggleLike: handleToggleLike, onToggleDislike: handleToggleDislike, onPlay: handlePlay };
   const expandHandler = (movie: Movie) => {
     setPreview(null);
@@ -255,27 +258,12 @@ export default function Browse({ activeProfile, onProfileChange }: { activeProfi
         <div className="-mt-[7vw] space-y-[1vw]">
           {homeRows.length > 0 ? (
             homeRows.map((row) => {
-              const movies: Movie[] = row.movies.map((m: Record<string, unknown>) => ({
-                id: (m.slug as string) || '',
-                title: (m.name as string) || '',
-                image: ((m.posterUrl || m.thumbUrl || '/placeholder.jpg') as string),
-                match: 85,
-                maturity: 'T16',
-                duration: ((m.time as string) || '45 phút'),
-                quality: ((m.quality as string) || 'HD'),
-                genres: ((m.tags as { name: string }[]) || []).map((t: { name: string }) => t.name),
-                isNew: false,
-                progress: m.progress as number | null | undefined,
-                episodeSlug: m.episodeSlug as string | null | undefined,
-                serverName: m.serverName as string | null | undefined,
-                episodeLabel: m.episodeSlug ? `Tập ${m.episodeSlug}` : undefined,
-              }));
-              if (movies.length === 0) return null;
+              if (row.movies.length === 0) return null;
               return (
                 <MovieRow
                   key={row.id}
                   title={row.title}
-                  movies={movies}
+                  movies={row.movies}
                   onExpand={expandHandler}
                   onPreview={openPreview}
                   onPreviewEnd={closePreview}
@@ -284,11 +272,8 @@ export default function Browse({ activeProfile, onProfileChange }: { activeProfi
                 />
               );
             })
-          ) : dbCollections.length > 0 ? (
-            dbCollections.map((col) => {
-              if (col.slug === 'phim-moi-cap-nhat' || col.slug === 'phim-dang-chieu') return null;
-              return null;
-            })
+          ) : isHomeLoading ? (
+            Array.from({ length: 6 }).map((_, i) => <SkeletonRow key={i} />)
           ) : (
             movieRows.map((row) => <MovieRow key={row.id} title={row.title} movies={row.movies} onExpand={expandHandler} onPreview={openPreview} onPreviewEnd={closePreview} />)
           )}
@@ -313,5 +298,22 @@ export default function Browse({ activeProfile, onProfileChange }: { activeProfi
         />
       ) : null}
     </main>
+  );
+}
+
+function SkeletonRow() {
+  return (
+    <section className="slider-row group/row relative py-[1.6vw]">
+      <div className="mb-2 px-[4%]">
+        <div className="h-[clamp(18px,1.4vw,24px)] w-48 animate-pulse rounded bg-[#2a2a2a]" />
+      </div>
+      <div className="relative overflow-x-clip overflow-y-visible py-12 -my-12">
+        <div className="flex gap-2 px-[4%]">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="aspect-video basis-[48%] sm:basis-[31%] md:basis-[23.5%] lg:basis-[18.9%] xl:basis-[15.8%] animate-pulse rounded-sm bg-[#2a2a2a]" />
+          ))}
+        </div>
+      </div>
+    </section>
   );
 }

@@ -43,20 +43,6 @@ export default function BrowseByType({
     setActiveProfile(profile);
   }, [router]);
 
-  useEffect(() => {
-    if (!activeProfile) return;
-    setLoading(true);
-    fetch(`/api/movies?${apiParams}&limit=50`)
-      .then((res) => res.json())
-      .then((data) => {
-        const m = data.movies ? (data.movies as DbMovie[]).map(mapDbMovie) : [];
-        setAllMovies(m);
-        setMovies(m.slice(0, 20));
-      })
-      .catch(() => { setAllMovies([]); setMovies([]); })
-      .finally(() => setLoading(false));
-  }, [activeProfile, apiParams]);
-
   const loadInteractions = useCallback(async (profileId: string) => {
     try {
       const res = await fetch(`/api/interactions?profileId=${profileId}`);
@@ -68,8 +54,20 @@ export default function BrowseByType({
   }, []);
 
   useEffect(() => {
-    if (activeProfile) loadInteractions(activeProfile.id);
-  }, [activeProfile, loadInteractions]);
+    if (!activeProfile) return;
+    setLoading(true);
+    Promise.all([
+      fetch(`/api/movies?${apiParams}&limit=50`).then((res) => res.json()),
+      loadInteractions(activeProfile.id),
+    ])
+      .then(([data]) => {
+        const m = data.movies ? (data.movies as DbMovie[]).map(mapDbMovie) : [];
+        setAllMovies(m);
+        setMovies(m.slice(0, 20));
+      })
+      .catch(() => { setAllMovies([]); setMovies([]); })
+      .finally(() => setLoading(false));
+  }, [activeProfile, apiParams, loadInteractions]);
 
   const handleToggleFavorite = useCallback(async (movie: Movie) => {
     const slug = movie.id;

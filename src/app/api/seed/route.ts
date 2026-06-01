@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/db';
+import { generateSearchText, generateSearchTextWithTags } from '@/lib/search-scoring';
 
 const DETAIL_CONCURRENCY = 10;
 const REQUEST_TIMEOUT_MS = 15000;
@@ -416,6 +417,25 @@ async function syncMovieDetail(movieSlug: string, stats: SyncStats) {
       });
     }
 
+    const movieForSearch = await prisma.movie.findUnique({
+      where: { slug: movieSlug },
+      select: { name: true, originalName: true, slug: true, tags: { select: { tag: { select: { name: true } } } } },
+    });
+
+    if (movieForSearch) {
+      await prisma.movie.update({
+        where: { slug: movieSlug },
+        data: {
+          searchText: generateSearchTextWithTags(
+            movieForSearch.name,
+            movieForSearch.originalName,
+            movieForSearch.slug,
+            movieForSearch.tags.map((mt) => mt.tag),
+          ),
+        },
+      });
+    }
+
     if (episodeChanged || detailModifiedAt) {
       await prisma.movie.update({
         where: { slug: movieSlug },
@@ -506,6 +526,8 @@ async function syncEndpoint(endpoint: Endpoint, detailQueue: Set<string>, stats:
 
         const now = new Date();
 
+        const newSearchText = generateSearchText(item.name, item.original_name, item.slug);
+
         await prisma.movie.upsert({
           where: { slug: item.slug },
           update: {
@@ -524,6 +546,7 @@ async function syncEndpoint(endpoint: Endpoint, detailQueue: Set<string>, stats:
             sourceCreatedAt: parseDate(item.created),
             sourceModifiedAt: apiModified,
             lastSyncedAt: now,
+            searchText: newSearchText,
           },
           create: {
             slug: item.slug,
@@ -543,6 +566,7 @@ async function syncEndpoint(endpoint: Endpoint, detailQueue: Set<string>, stats:
             sourceCreatedAt: parseDate(item.created),
             sourceModifiedAt: apiModified,
             lastSyncedAt: now,
+            searchText: newSearchText,
           },
         });
 

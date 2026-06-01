@@ -6,17 +6,13 @@ type RowMovie = {
   originalName: string | null;
   thumbUrl: string | null;
   posterUrl: string | null;
-  description: string | null;
-  totalEpisodes: number | null;
   time: string | null;
   quality: string | null;
   tags: { name: string; group: string }[];
-  // History fields
   progress?: number | null;
   duration?: number | null;
   episodeSlug?: string | null;
   serverName?: string | null;
-  // Top 10 fields
   top10Rank?: number;
   top10ImageUrl?: string | null;
   top10NetflixUrl?: string | null;
@@ -30,23 +26,23 @@ type HomeRow = {
   movies: RowMovie[];
 };
 
-function formatMovie(m: Record<string, unknown>) {
+const HOME_MOVIE_SELECT = {
+  slug: true, name: true, originalName: true,
+  thumbUrl: true, posterUrl: true, time: true, quality: true,
+  tags: { select: { tag: { select: { name: true, group: { select: { name: true } } } } } },
+} as const;
+
+function formatMovie(m: {
+  slug: string; name: string; originalName: string | null;
+  thumbUrl: string | null; posterUrl: string | null;
+  time: string | null; quality: string | null;
+  tags: Array<{ tag: { name: string; group: { name: string } } }>;
+}): RowMovie {
   return {
-    slug: m.slug as string,
-    name: m.name as string,
-    originalName: (m.originalName as string) || null,
-    thumbUrl: (m.thumbUrl as string) || null,
-    posterUrl: (m.posterUrl as string) || null,
-    description: (m.description as string) || null,
-    totalEpisodes: (m.totalEpisodes as number) || null,
-    time: (m.time as string) || null,
-    quality: (m.quality as string) || null,
-    tags: ((m.tags as { tag: { name: string; group: { name: string } } }[]) ?? []).map(
-      (mt: { tag: { name: string; group: { name: string } } }) => ({
-        name: mt.tag.name,
-        group: mt.tag.group.name,
-      })
-    ),
+    slug: m.slug, name: m.name, originalName: m.originalName,
+    thumbUrl: m.thumbUrl, posterUrl: m.posterUrl,
+    time: m.time, quality: m.quality,
+    tags: m.tags.map((mt) => ({ name: mt.tag.name, group: mt.tag.group.name })),
   };
 }
 
@@ -55,13 +51,13 @@ function isUnwatched(movieSlug: string, watchedSlugs: Set<string>): boolean {
 }
 
 export async function getHomeRows(profileId?: string | null): Promise<HomeRow[]> {
+  const isDev = process.env.NODE_ENV === 'development';
+  if (isDev) console.time('getHomeRows');
   const rows: HomeRow[] = [];
   const seenSlugs = new Set<string>();
+  const watchedSlugs = new Set<string>();
 
-  function addUnique(slugs: string[]) {
-    for (const s of slugs) seenSlugs.add(s);
-  }
-
+  function addUnique(slugs: string[]) { for (const s of slugs) seenSlugs.add(s); }
   function dedupe(movies: RowMovie[]): RowMovie[] {
     return movies.filter((m) => {
       if (seenSlugs.has(m.slug)) return false;
@@ -70,337 +66,251 @@ export async function getHomeRows(profileId?: string | null): Promise<HomeRow[]>
     });
   }
 
-  const watchedSlugs = new Set<string>();
-  let profileGenreCount: Record<string, number> = {};
-  let profileCountryCount: Record<string, number> = {};
-  let lastWatchedSlug: string | null = null;
+  const { getCurrentWeekLabel } = await import('./top10-utils');
+  const weekLabel = getCurrentWeekLabel();
 
-  if (profileId) {
-    // Load interactions
-    const [history, favorites, reactions] = await Promise.all([
-      prisma.watchHistory.findMany({
+  // ============ Phase 1: All independent queries ============
+  // Wrap each with .catch() so one missing table doesn't crash the whole page
+  const historyPromise = profileId
+    ? prisma.watchHistory.findMany({
         where: { profileId },
         select: { movieSlug: true, progress: true, duration: true, episodeSlug: true, serverName: true },
         orderBy: { updatedAt: 'desc' },
-      }),
-      prisma.favorite.findMany({
-        where: { profileId },
-        select: { movieSlug: true },
-      }),
-      prisma.reaction.findMany({
-        where: { profileId, value: 'like' },
-        select: { movieSlug: true },
-      }),
+      }).catch(() => [])
+    : Promise.resolve([]);
+
+  const favoritesPromise = profileId
+    ? prisma.favorite.findMany({
+        where: { profileId }, select: { movieSlug: true },
+      }).catch(() => [])
+    : Promise.resolve([]);
+
+  const reactionsPromise = profileId
+    ? prisma.reaction.findMany({
+        where: { profileId, value: 'like' }, select: { movieSlug: true },
+      }).catch(() => [])
+    : Promise.resolve([]);
+
+  const continueWatchingPromise = profileId
+    ? prisma.watchHistory.findMany({
+        where: { profileId, progress: { gt: 0 } },
+        orderBy: { updatedAt: 'desc' }, take: 20,
+        include: { movie: { select: HOME_MOVIE_SELECT } },
+      }).catch(() => [])
+    : Promise.resolve([]);
+
+  const top10Promise = prisma.netflixTop10.findMany({
+    where: { country: 'vietnam', weekLabel },
+    orderBy: [{ type: 'asc' }, { rank: 'asc' }],
+    include: { matchedMovie: { select: HOME_MOVIE_SELECT } },
+  }).catch(() => []);
+
+  const newMoviesPromise = prisma.movie.findMany({
+    orderBy: { updatedAt: 'desc' }, take: 20,
+    select: HOME_MOVIE_SELECT,
+  }).catch(() => []);
+
+  const watchedSeriesPromise = profileId
+    ? prisma.watchHistory.findMany({
+        where: { profileId, movie: { totalEpisodes: { gt: 1 } } },
+        select: { movieSlug: true }, distinct: ['movieSlug'], take: 5,
+      }).catch(() => [])
+    : Promise.resolve([]);
+
+  const myListPromise = profileId
+    ? prisma.favorite.findMany({
+        where: { profileId }, orderBy: { createdAt: 'desc' }, take: 20,
+        include: { movie: { select: HOME_MOVIE_SELECT } },
+      }).catch(() => [])
+    : Promise.resolve([]);
+
+  const [history, favorites, reactions, historyRows, top10Entries, newMovies, watchedSeries, myList] =
+    await Promise.all([
+      historyPromise, favoritesPromise, reactionsPromise,
+      continueWatchingPromise, top10Promise, newMoviesPromise,
+      watchedSeriesPromise, myListPromise,
     ]);
 
-    for (const h of history) {
-      watchedSlugs.add(h.movieSlug);
-    }
-    if (history.length > 0) {
-      lastWatchedSlug = history[0].movieSlug;
-    }
+  // Process Phase 1 results
+  for (const h of history) watchedSlugs.add(h.movieSlug);
+  const lastWatchedSlug = history.length > 0 ? history[0].movieSlug : null;
 
-    // Count genres from liked/favorited movies
-    const likedSlugs = new Set([
-      ...favorites.map((f) => f.movieSlug),
-      ...reactions.map((r) => r.movieSlug),
-    ]);
+  const likedSlugs = new Set([
+    ...favorites.map((f) => f.movieSlug),
+    ...reactions.map((r) => r.movieSlug),
+  ]);
 
-    if (likedSlugs.size > 0) {
-      const likedMovies = await prisma.movie.findMany({
+  // ============ Phase 2: Depends on Phase 1 ============
+  const genreAnalysisPromise = likedSlugs.size > 0
+    ? prisma.movie.findMany({
         where: { slug: { in: [...likedSlugs] } },
-        include: {
-          tags: { include: { tag: { include: { group: true } } } },
-        },
-      });
-
-      for (const movie of likedMovies) {
-        for (const mt of movie.tags) {
-          if (mt.tag.group.name === 'Thể loại') {
-            profileGenreCount[mt.tag.name] = (profileGenreCount[mt.tag.name] || 0) + 1;
-          }
-          if (mt.tag.group.name === 'Quốc gia') {
-            profileCountryCount[mt.tag.name] = (profileCountryCount[mt.tag.name] || 0) + 1;
+        select: { tags: { select: { tag: { select: { name: true, group: { select: { name: true } } } } } } },
+      }).then((movies) => {
+        const genreCount: Record<string, number> = {};
+        for (const movie of movies) {
+          for (const mt of movie.tags) {
+            if (mt.tag.group.name === 'Thể loại') {
+              genreCount[mt.tag.name] = (genreCount[mt.tag.name] || 0) + 1;
+            }
           }
         }
-      }
-    }
-  }
+        return genreCount;
+      }).catch(() => ({} as Record<string, number>))
+    : Promise.resolve({} as Record<string, number>);
 
-  // Row 1: Continue Watching
-  if (profileId) {
-    const historyRows = await prisma.watchHistory.findMany({
-      where: { profileId, progress: { gt: 0 } },
-      orderBy: { updatedAt: 'desc' },
-      take: 20,
-      include: {
-        movie: {
-          include: {
-            tags: { include: { tag: { include: { group: true } } } },
+  const lastWatchedPromise = lastWatchedSlug
+    ? prisma.movie.findUnique({
+        where: { slug: lastWatchedSlug },
+        select: HOME_MOVIE_SELECT,
+      }).catch(() => null)
+    : Promise.resolve(null);
+
+  const moreSeriesPromise = (profileId && watchedSeries.length > 0)
+    ? (() => {
+        const seriesSlugs = watchedSeries.map((w) => w.movieSlug);
+        return prisma.movie.findMany({
+          where: {
+            totalEpisodes: { gt: 1 },
+            slug: { notIn: [...seriesSlugs] },
+            tags: { some: { tag: { movies: { some: { movieSlug: { in: seriesSlugs } } } } } },
           },
-        },
-      },
-    });
+          select: HOME_MOVIE_SELECT, take: 20,
+        }).catch(() => []);
+      })()
+    : Promise.resolve([]);
 
-    const continueMovies: RowMovie[] = historyRows
-      .filter((h) => h.movie)
-      .map((h) => ({
-        ...formatMovie(h.movie as unknown as Record<string, unknown>),
-        progress: h.progress,
-        duration: h.duration,
-        episodeSlug: h.episodeSlug,
-        serverName: h.serverName,
-      }));
+  const [profileGenreCount, lastWatchedMovie, moreSeries] = await Promise.all([
+    genreAnalysisPromise, lastWatchedPromise, moreSeriesPromise,
+  ]);
 
+  // ============ Phase 3: Depends on Phase 2 ============
+  const topGenre = Object.entries(profileGenreCount).sort((a, b) => b[1] - a[1])[0]?.[0];
+
+  const similarMoviesPromise = lastWatchedMovie
+    ? (() => {
+        const genreTags = lastWatchedMovie.tags
+          .filter((mt) => mt.tag.group.name === 'Thể loại')
+          .map((mt) => mt.tag.name);
+        if (genreTags.length === 0) return Promise.resolve([]);
+        return prisma.movie.findMany({
+          where: {
+            slug: { not: lastWatchedSlug! },
+            tags: { some: { tag: { name: { in: genreTags } } } },
+          },
+          select: HOME_MOVIE_SELECT, take: 20,
+        }).catch(() => []);
+      })()
+    : Promise.resolve([]);
+
+  const genreMoviesPromise = topGenre
+    ? prisma.movie.findMany({
+        where: { tags: { some: { tag: { name: topGenre, group: { name: 'Thể loại' } } } } },
+        select: HOME_MOVIE_SELECT, take: 20,
+      }).catch(() => [])
+    : Promise.resolve([]);
+
+  const [similarMovies, genreMovies] = await Promise.all([similarMoviesPromise, genreMoviesPromise]);
+
+  // ============ Build rows sequentially with dedup ============
+  // Row 1: Continue Watching
+  if (historyRows.length > 0) {
+    const continueMovies: RowMovie[] = historyRows.filter((h) => h.movie).map((h) => ({
+      ...formatMovie(h.movie!),
+      progress: h.progress,
+      duration: h.duration,
+      episodeSlug: h.episodeSlug,
+      serverName: h.serverName,
+    }));
     if (continueMovies.length > 0) {
       rows.push({ id: 'continue-watching', title: 'Tiếp tục xem', movies: continueMovies });
       addUnique(continueMovies.map((m) => m.slug));
     }
   }
 
-  // Row 2-3: Top 10 movies & TV
-  const { getCurrentWeekLabel } = await import('./top10-utils');
-  const weekLabel = getCurrentWeekLabel();
-
-  const top10Entries = await prisma.netflixTop10.findMany({
-    where: { country: 'vietnam', weekLabel },
-    orderBy: [{ type: 'asc' }, { rank: 'asc' }],
-    include: {
-      matchedMovie: {
-        include: { tags: { include: { tag: { include: { group: true } } } } },
-      },
-    },
-  });
-
-  const top10Movies: RowMovie[] = top10Entries
-    .filter((e) => e.type === 'movie')
-    .map((e) => {
-      if (e.matchedMovie) {
+  // Rows 2-3: Top 10
+  if (top10Entries.length > 0) {
+    const buildTop10 = (type: 'movie' | 'tv', title: string) => {
+      const entries = top10Entries.filter((e) => e.type === type);
+      if (entries.length === 0) return;
+      const movies: RowMovie[] = entries.map((e) => {
+        if (e.matchedMovie) {
+          return { ...formatMovie(e.matchedMovie), top10Rank: e.rank, top10MatchStatus: e.matchStatus };
+        }
         return {
-          ...formatMovie(e.matchedMovie as unknown as Record<string, unknown>),
-          top10Rank: e.rank,
-          top10MatchStatus: e.matchStatus,
+          slug: e.netflixTitle, name: e.netflixTitle, originalName: null,
+          thumbUrl: e.imageUrl || null, posterUrl: e.imageUrl || null,
+          time: null, quality: null, tags: [],
+          top10Rank: e.rank, top10ImageUrl: e.imageUrl,
+          top10NetflixUrl: e.netflixUrl, top10MatchStatus: e.matchStatus,
         };
-      }
-      return {
-        slug: e.netflixTitle,
-        name: e.netflixTitle,
-        originalName: null,
-        thumbUrl: e.imageUrl || null,
-        posterUrl: e.imageUrl || null,
-        description: null,
-        totalEpisodes: null,
-        time: null,
-        quality: null,
-        tags: [],
-        top10Rank: e.rank,
-        top10ImageUrl: e.imageUrl,
-        top10NetflixUrl: e.netflixUrl,
-        top10MatchStatus: e.matchStatus,
-      };
-    });
-
-  if (top10Movies.length > 0) {
-    rows.push({
-      id: 'top10-movies',
-      title: 'Top 10 Phim tại Việt Nam hôm nay',
-      variant: 'top10',
-      movies: dedupe(top10Movies),
-    });
-  }
-
-  const top10Tv: RowMovie[] = top10Entries
-    .filter((e) => e.type === 'tv')
-    .map((e) => {
-      if (e.matchedMovie) {
-        return {
-          ...formatMovie(e.matchedMovie as unknown as Record<string, unknown>),
-          top10Rank: e.rank,
-          top10MatchStatus: e.matchStatus,
-        };
-      }
-      return {
-        slug: e.netflixTitle,
-        name: e.netflixTitle,
-        originalName: null,
-        thumbUrl: e.imageUrl || null,
-        posterUrl: e.imageUrl || null,
-        description: null,
-        totalEpisodes: null,
-        time: null,
-        quality: null,
-        tags: [],
-        top10Rank: e.rank,
-        top10ImageUrl: e.imageUrl,
-        top10NetflixUrl: e.netflixUrl,
-        top10MatchStatus: e.matchStatus,
-      };
-    });
-
-  if (top10Tv.length > 0) {
-    rows.push({
-      id: 'top10-tv',
-      title: 'Top 10 TV tại Việt Nam hôm nay',
-      variant: 'top10',
-      movies: dedupe(top10Tv),
-    });
-  }
-
-  // Row 4: "Vì bạn đã xem [movie name]"
-  if (lastWatchedSlug) {
-    const lastWatched = await prisma.movie.findUnique({
-      where: { slug: lastWatchedSlug },
-      include: {
-        tags: { include: { tag: { include: { group: true } } } },
-        history: { where: { profileId: profileId || '' } },
-      },
-    });
-
-    if (lastWatched) {
-      const genreTags = lastWatched.tags
-        .filter((mt) => mt.tag.group.name === 'Thể loại')
-        .map((mt) => mt.tag.name);
-
-      const similarMovies = await prisma.movie.findMany({
-        where: {
-          slug: { not: lastWatchedSlug },
-          tags: {
-            some: {
-              tag: { name: { in: genreTags } },
-            },
-          },
-        },
-        include: {
-          tags: { include: { tag: { include: { group: true } } } },
-        },
-        take: 20,
       });
-
-      const filtered = similarMovies.filter((m) => isUnwatched(m.slug, watchedSlugs));
-      if (filtered.length > 0) {
-        rows.push({
-          id: 'because-you-watched',
-          title: `Vì bạn đã xem ${lastWatched.name}`,
-          movies: dedupe(filtered.map((m) => formatMovie(m as unknown as Record<string, unknown>))),
-        });
+      const deduped = dedupe(movies);
+      if (deduped.length > 0) {
+        rows.push({ id: `top10-${type}`, title, variant: 'top10', movies: deduped });
       }
+    };
+    buildTop10('movie', 'Top 10 Phim tại Việt Nam hôm nay');
+    buildTop10('tv', 'Top 10 TV tại Việt Nam hôm nay');
+  }
+
+  // Row 4: "Vì bạn đã xem..."
+  if (lastWatchedMovie) {
+    const genreTags = lastWatchedMovie.tags
+      .filter((mt) => mt.tag.group.name === 'Thể loại')
+      .map((mt) => mt.tag.name);
+    const filtered = genreTags.length > 0
+      ? similarMovies.filter((m) => isUnwatched(m.slug, watchedSlugs))
+      : [];
+    if (filtered.length > 0) {
+      rows.push({
+        id: 'because-you-watched',
+        title: `Vì bạn đã xem ${lastWatchedMovie.name}`,
+        movies: dedupe(filtered.map((m) => formatMovie(m))),
+      });
     }
   }
 
   // Row 5: Top genre recommendations
-  const topGenre = Object.entries(profileGenreCount).sort((a, b) => b[1] - a[1])[0]?.[0];
   if (topGenre) {
-    const genreMovies = await prisma.movie.findMany({
-      where: {
-        tags: {
-          some: {
-            tag: { name: topGenre, group: { name: 'Thể loại' } },
-          },
-        },
-      },
-      include: {
-        tags: { include: { tag: { include: { group: true } } } },
-      },
-      take: 20,
-    });
-
     const filtered = genreMovies.filter((m) => isUnwatched(m.slug, watchedSlugs));
     if (filtered.length > 0) {
       rows.push({
-        id: 'top-genre',
-        title: `Phim ${topGenre} dành cho bạn`,
-        movies: dedupe(filtered.map((m) => formatMovie(m as unknown as Record<string, unknown>))),
+        id: 'top-genre', title: `Phim ${topGenre} dành cho bạn`,
+        movies: dedupe(filtered.map((m) => formatMovie(m))),
       });
     }
   }
 
   // Row 6: Newly updated movies
-  const newMovies = await prisma.movie.findMany({
-    orderBy: { updatedAt: 'desc' },
-    include: {
-      tags: { include: { tag: { include: { group: true } } } },
-    },
-    take: 20,
-  });
-
-  rows.push({
-    id: 'new-updates',
-    title: 'Phim mới cập nhật',
-    movies: dedupe(newMovies.map((m) => formatMovie(m as unknown as Record<string, unknown>))),
-  });
+  if (newMovies.length > 0) {
+    rows.push({
+      id: 'new-updates', title: 'Phim mới cập nhật',
+      movies: dedupe(newMovies.map((m) => formatMovie(m))),
+    });
+  }
 
   // Row 7: Series from watch history
-  if (profileId) {
-    const watchedSeries = await prisma.watchHistory.findMany({
-      where: {
-        profileId,
-        movie: { totalEpisodes: { gt: 1 } },
-      },
-      select: { movieSlug: true },
-      distinct: ['movieSlug'],
-      take: 5,
-    });
-
-    if (watchedSeries.length > 0) {
-      const seriesSlugs = watchedSeries.map((w) => w.movieSlug);
-      const moreSeries = await prisma.movie.findMany({
-        where: {
-          totalEpisodes: { gt: 1 },
-          slug: { notIn: [...seriesSlugs] },
-          tags: {
-            some: {
-              tag: {
-                movies: {
-                  some: { movieSlug: { in: seriesSlugs } },
-                },
-              },
-            },
-          },
-        },
-        include: {
-          tags: { include: { tag: { include: { group: true } } } },
-        },
-        take: 20,
+  if (profileId && moreSeries.length > 0) {
+    const filtered = moreSeries.filter((m) => isUnwatched(m.slug, watchedSlugs));
+    if (filtered.length > 0) {
+      rows.push({
+        id: 'series-you-may-like', title: 'Phim bộ có thể bạn thích',
+        movies: dedupe(filtered.map((m) => formatMovie(m))),
       });
-
-      const filtered = moreSeries.filter((m) => isUnwatched(m.slug, watchedSlugs));
-      if (filtered.length > 0) {
-        rows.push({
-          id: 'series-you-may-like',
-          title: 'Phim bộ có thể bạn thích',
-          movies: dedupe(filtered.map((m) => formatMovie(m as unknown as Record<string, unknown>))),
-        });
-      }
     }
   }
 
   // Row 8: My List preview
-  if (profileId) {
-    const myList = await prisma.favorite.findMany({
-      where: { profileId },
-      orderBy: { createdAt: 'desc' },
-      take: 20,
-      include: {
-        movie: {
-          include: {
-            tags: { include: { tag: { include: { group: true } } } },
-          },
-        },
-      },
-    });
-
-    const myListMovies = myList
-      .filter((f) => f.movie)
-      .map((f) => formatMovie(f.movie as unknown as Record<string, unknown>));
-
+  if (myList.length > 0) {
+    const myListMovies = myList.filter((f) => f.movie).map((f) => formatMovie(f.movie!));
     if (myListMovies.length > 0) {
       rows.push({
-        id: 'my-list',
-        title: 'Danh sách của bạn',
+        id: 'my-list', title: 'Danh sách của bạn',
         movies: dedupe(myListMovies),
       });
     }
   }
 
+  if (isDev) console.timeEnd('getHomeRows');
   return rows;
 }

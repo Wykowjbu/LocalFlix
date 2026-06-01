@@ -16,6 +16,34 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+## Database Setup
+
+This project uses **SQLite** with Prisma (no migration needed — uses `db push`). After cloning:
+
+```bash
+# 1. Push schema to SQLite database (creates dev.db)
+npx prisma db push
+
+# 2. Backfill searchText for existing movies
+npm run db:backfill-searchtext
+```
+
+Then seed data via `POST /api/seed` (see seed route for details).
+
+### About `searchText`
+
+The `searchText` field enables accent-insensitive Vietnamese search (e.g. "tinh cam" matches "Tình Cảm", "bo gia" matches "Bố Già"). It's auto-generated when syncing movies from the external API and includes: normalized name + normalized originalName + slug + tag names. If you reset the database, run `npm run db:backfill-searchtext` to regenerate it.
+
+## Package Scripts
+
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Start dev server |
+| `npm run build` | Production build |
+| `npm run start` | Start production server |
+| `npm run lint` | Run ESLint |
+| `npm run db:backfill-searchtext` | Backfill searchText for all movies |
+
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
