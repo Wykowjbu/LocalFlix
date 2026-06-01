@@ -227,27 +227,29 @@ export async function getHomeRows(profileId?: string | null): Promise<HomeRow[]>
     }
   }
 
-  // Rows 2-3: Top 10
+  // Rows 2-3: Top 10 (no global dedup — preserve all ranks)
   if (top10Entries.length > 0) {
     const buildTop10 = (type: 'movie' | 'tv', title: string) => {
       const entries = top10Entries.filter((e) => e.type === type);
       if (entries.length === 0) return;
       const movies: RowMovie[] = entries.map((e) => {
-        if (e.matchedMovie) {
+        if (e.matchedMovie && e.matchStatus === 'matched') {
           return { ...formatMovie(e.matchedMovie), top10Rank: e.rank, top10MatchStatus: e.matchStatus };
         }
         return {
-          slug: e.netflixTitle, name: e.netflixTitle, originalName: null,
-          thumbUrl: e.imageUrl || null, posterUrl: e.imageUrl || null,
-          time: null, quality: null, tags: [],
+          slug: `top10-${type}-${weekLabel}-${e.rank}`,
+          name: e.matchedMovie?.name || e.netflixTitle, originalName: null,
+          thumbUrl: e.matchedMovie?.thumbUrl ?? null,
+          posterUrl: e.matchedMovie?.posterUrl ?? null,
+          time: e.matchedMovie?.time || null, quality: e.matchedMovie?.quality || null,
+          tags: e.matchedMovie
+            ? e.matchedMovie.tags.map((mt) => ({ name: mt.tag.name, group: mt.tag.group.name }))
+            : [],
           top10Rank: e.rank, top10ImageUrl: e.imageUrl,
           top10NetflixUrl: e.netflixUrl, top10MatchStatus: e.matchStatus,
         };
       });
-      const deduped = dedupe(movies);
-      if (deduped.length > 0) {
-        rows.push({ id: `top10-${type}`, title, variant: 'top10', movies: deduped });
-      }
+      rows.push({ id: `top10-${type}`, title, variant: 'top10', movies });
     };
     buildTop10('movie', 'Top 10 Phim tại Việt Nam hôm nay');
     buildTop10('tv', 'Top 10 TV tại Việt Nam hôm nay');

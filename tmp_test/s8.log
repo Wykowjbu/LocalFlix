@@ -1,0 +1,106 @@
+
+> localflix@0.1.0 predev
+> if exist .next rmdir /s /q .next
+
+
+> localflix@0.1.0 dev
+> next dev
+
+▲ Next.js 16.2.6 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://192.168.110.70:3000
+- Environments: .env
+✓ Ready in 634ms
+
+ GET /login 200 in 2.8s (next.js: 2.6s, application-code: 212ms)
+ GET /browse 200 in 679ms (next.js: 607ms, application-code: 72ms)
+ GET /search 200 in 403ms (next.js: 351ms, application-code: 52ms)
+ GET /genre/hanh-dong 200 in 999ms (next.js: 947ms, application-code: 52ms)
+ GET /country/my 200 in 837ms (next.js: 779ms, application-code: 58ms)
+ GET /movies 200 in 343ms (next.js: 303ms, application-code: 39ms)
+getHomeRows: 387.907ms
+/api/home-rows: 390.228ms
+ GET /api/home-rows 200 in 753ms (next.js: 315ms, application-code: 439ms)
+ GET /api/top10 200 in 139ms (next.js: 128ms, application-code: 11ms)
+ GET /browse 200 in 125ms (next.js: 37ms, application-code: 88ms)
+/api/tags group=the-loai: 121.36ms
+  returned: 21/24 tags with movies
+ GET /api/tags?group=the-loai 200 in 573ms (next.js: 433ms, application-code: 140ms)
+/api/tags group=quoc-gia: 120.129ms
+  returned: 24/24 tags with movies
+ GET /api/tags?group=quoc-gia 200 in 580ms (next.js: 448ms, application-code: 132ms)
+ GET /api/interactions?profileId=cmptb1v0c0h85mgh458r1qnbm 200 in 589ms (next.js: 518ms, application-code: 71ms)
+getHomeRows: 479.102ms
+/api/home-rows: 480.303ms
+ GET /api/home-rows?profileId=cmptb1v0c0h85mgh458r1qnbm 200 in 497ms (next.js: 4ms, application-code: 493ms)
+ GET /new-popular 200 in 994ms (next.js: 862ms, application-code: 132ms)
+ GET /api/interactions?profileId=cmptb1v0c0h85mgh458r1qnbm 200 in 67ms (next.js: 15ms, application-code: 53ms)
+/api/tags group=the-loai: 59.615ms
+  returned: 21/24 tags with movies
+ GET /api/tags?group=the-loai 200 in 118ms (next.js: 43ms, application-code: 75ms)
+/api/tags group=quoc-gia: 88.019ms
+  returned: 24/24 tags with movies
+ GET /api/tags?group=quoc-gia 200 in 128ms (next.js: 10ms, application-code: 118ms)
+/api/movies sort=newest: 325.909ms
+  sort=newest total: 32572
+ GET /api/movies?sort=newest&limit=50&page=1 200 in 639ms (next.js: 302ms, application-code: 338ms)
+ GET /tv-shows 200 in 524ms (next.js: 459ms, application-code: 64ms)
+/api/tags group=the-loai: 27.225ms
+  returned: 21/24 tags with movies
+ GET /api/tags?group=the-loai 200 in 41ms (next.js: 6ms, application-code: 35ms)
+/api/tags group=quoc-gia: 23.402ms
+  returned: 24/24 tags with movies
+ GET /api/tags?group=quoc-gia 200 in 45ms (next.js: 13ms, application-code: 32ms)
+ GET /api/interactions?profileId=cmptb1v0c0h85mgh458r1qnbm 200 in 52ms (next.js: 28ms, application-code: 24ms)
+/api/movies type=phim-bo: 123.441ms
+  type=phim-bo total: 13917
+ GET /api/movies?type=phim-bo&limit=50&page=1 200 in 149ms (next.js: 20ms, application-code: 130ms)
+ GET /country/han-quoc 200 in 152ms (next.js: 51ms, application-code: 101ms)
+ GET /api/interactions?profileId=cmptb1v0c0h85mgh458r1qnbm 200 in 66ms (next.js: 38ms, application-code: 28ms)
+/api/tags group=the-loai: 58.218ms
+  returned: 21/24 tags with movies
+ GET /api/tags?group=the-loai 200 in 77ms (next.js: 7ms, application-code: 70ms)
+/api/tags group=quoc-gia: 50.864ms
+  returned: 24/24 tags with movies
+ GET /api/tags?group=quoc-gia 200 in 80ms (next.js: 21ms, application-code: 59ms)
+/api/movies country=han-quoc: 265.887ms
+  country='Hàn Quốc' (han-quoc) total: 38
+ GET /api/movies?country=han-quoc&limit=50&page=1 200 in 304ms (next.js: 29ms, application-code: 274ms)
+ GET /search?q=do 200 in 44ms (next.js: 8ms, application-code: 36ms)
+ GET /api/interactions?profileId=cmptb1v0c0h85mgh458r1qnbm 200 in 15ms (next.js: 3ms, application-code: 11ms)
+  db fetch: 77.766ms
+  candidates before scoring: 500
+  scoring: 5.617ms
+/api/movies search: 85.149ms
+  matched: 500 | response size: 18987 bytes
+ GET /api/movies?q=do&limit=60&page=1 200 in 93ms (next.js: 4ms, application-code: 90ms)
+  db fetch: 85.321ms
+  candidates before scoring: 500
+  scoring: 4.62ms
+/api/movies search: 91.424ms
+  matched: 500 | response size: 18987 bytes
+ GET /api/movies?q=do&limit=60&page=1 200 in 101ms (next.js: 4ms, application-code: 98ms)
+ GET /search?q=doana 200 in 23ms (next.js: 4ms, application-code: 20ms)
+  db fetch: 60.078ms
+  candidates before scoring: 0
+  scoring: 0.018ms
+/api/movies search: 61.267ms
+  matched: 0 | response size: 59 bytes
+ GET /api/movies?q=doana&limit=60&page=1 200 in 70ms (next.js: 3ms, application-code: 68ms)
+ GET /search?q=doona 200 in 25ms (next.js: 4ms, application-code: 21ms)
+  db fetch: 48.152ms
+  candidates before scoring: 1
+  scoring: 0.031ms
+/api/movies search: 49.212ms
+  matched: 1 | response size: 444 bytes
+ GET /api/movies?q=doona&limit=60&page=1 200 in 58ms (next.js: 4ms, application-code: 54ms)
+ GET /api/movies?slug=doona&withEpisodes=true 200 in 10ms (next.js: 3ms, application-code: 8ms)
+ GET /api/movies?slug=doona&withEpisodes=true 200 in 8ms (next.js: 3ms, application-code: 6ms)
+ POST /api/interactions/favorites 200 in 374ms (next.js: 345ms, application-code: 29ms)
+ GET /search?q=Bae+Suzy 200 in 29ms (next.js: 5ms, application-code: 24ms)
+  db fetch: 60.635ms
+  candidates before scoring: 0
+  scoring: 0.01ms
+/api/movies search: 61.938ms
+  matched: 0 | response size: 59 bytes
+ GET /api/movies?q=Bae%20Suzy&limit=60&page=1 200 in 73ms (next.js: 3ms, application-code: 69ms)

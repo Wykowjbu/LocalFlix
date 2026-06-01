@@ -1,0 +1,37 @@
+
+> localflix@0.1.0 predev
+> if exist .next rmdir /s /q .next
+
+
+> localflix@0.1.0 dev
+> next dev
+
+▲ Next.js 16.2.6 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://192.168.110.70:3000
+- Environments: .env
+✓ Ready in 702ms
+
+ GET /browse 200 in 3.8s (next.js: 3.5s, application-code: 304ms)
+/api/tags group=quoc-gia: 96.167ms
+  returned: 24/24 tags with movies
+ GET /api/tags?group=quoc-gia 200 in 634ms (next.js: 472ms, application-code: 162ms)
+/api/tags group=the-loai: 98.307ms
+  returned: 21/24 tags with movies
+ GET /api/tags?group=the-loai 200 in 668ms (next.js: 558ms, application-code: 109ms)
+ GET /api/interactions?profileId=cmptb1v0c0h85mgh458r1qnbm 200 in 339ms (next.js: 246ms, application-code: 94ms)
+getHomeRows: 419.381ms
+/api/home-rows: 420.693ms
+ GET /api/home-rows?profileId=cmptb1v0c0h85mgh458r1qnbm 200 in 725ms (next.js: 294ms, application-code: 431ms)
+Persisting failed: Unable to open static sorted file referenced from 00000016.meta
+
+Caused by:
+    0: Unable to open static sorted file 00000015.sst
+    1: Failed to open SST file D:\Users\huynp29052004\Projects\Netflix_UI\localflix\.next\dev\cache/turbopack\ee6e79b1\00000015.sst
+    2: The system cannot find the file specified. (os error 2)
+Persisting failed: Another write batch or compaction is already active (Only a single write operations is allowed at a time)
+Compaction failed: Another write batch or compaction is already active (Only a single write operations is allowed at a time)
+Persisting failed: Another write batch or compaction is already active (Only a single write operations is allowed at a time)
+Compaction failed: Another write batch or compaction is already active (Only a single write operations is allowed at a time)
+Persisting failed: Another write batch or compaction is already active (Only a single write operations is allowed at a time)
+Compaction failed: Another write batch or compaction is already active (Only a single write operations is allowed at a time)

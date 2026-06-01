@@ -38,14 +38,15 @@ export default memo(function MovieCard({
   onPlay?: (movie: Movie) => void;
 }) {
   const isTop10 = variant === "top10";
+  const isUnmatchedTop10 = isTop10 && movie.top10MatchStatus && movie.top10MatchStatus !== 'matched';
   const isFav = favoriteSlugs?.has(movie.id) ?? false;
   const isLiked = likedSlugs?.has(movie.id) ?? false;
   const isDisliked = dislikedSlugs?.has(movie.id) ?? false;
 
   return (
     <article
-      onMouseEnter={(event) => onPreview(movie, event.currentTarget.getBoundingClientRect())}
-      onMouseLeave={onPreviewEnd}
+      onMouseEnter={isUnmatchedTop10 ? undefined : (event) => onPreview(movie, event.currentTarget.getBoundingClientRect())}
+      onMouseLeave={isUnmatchedTop10 ? undefined : onPreviewEnd}
       className={`movie-card group/card relative shrink-0 cursor-pointer ${
         isTop10 ? "basis-[64%] sm:basis-[42%] md:basis-[31%] lg:basis-[24%] xl:basis-[20%]" : "basis-[48%] sm:basis-[31%] md:basis-[23.5%] lg:basis-[18.9%] xl:basis-[15.8%]"
       }`}
@@ -60,16 +61,40 @@ export default memo(function MovieCard({
             {rank}
           </div>
           <div className="relative z-10 h-full aspect-[7/10] -ml-[7%] overflow-hidden bg-[#181818] shadow-[0_0_0_1px_rgba(255,255,255,.05)]">
-            <Image
-              src={movie.image}
-              alt={movie.title}
-              fill
-              sizes="(max-width: 640px) 32vw, (max-width: 1024px) 18vw, 12vw"
-              className="object-cover transition-transform duration-300 group-hover/card:scale-105"
-            />
+            {isUnmatchedTop10 ? (
+              <div className="flex h-full w-full items-center justify-center p-4">
+                <div className="text-center">
+                  <svg className="mx-auto mb-2 h-8 w-8 text-[#555]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15.75 10.5l4.72-4.72a.75.75 0 011.28.53v11.38a.75.75 0 01-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 002.25-2.25v-9a2.25 2.25 0 00-2.25-2.25h-9A2.25 2.25 0 002.25 7.5v9a2.25 2.25 0 002.25 2.25z" /></svg>
+                </div>
+              </div>
+            ) : (
+              <Image
+                src={movie.image}
+                alt={movie.title}
+                fill
+                sizes="(max-width: 640px) 32vw, (max-width: 1024px) 18vw, 12vw"
+                className="object-cover transition-transform duration-300 group-hover/card:scale-105"
+              />
+            )}
             <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 to-transparent p-2">
               <p className="truncate text-[11px] font-bold text-white">{movie.title}</p>
             </div>
+            {isUnmatchedTop10 ? (
+              <div className="absolute top-1 left-1 rounded bg-yellow-500/80 px-1.5 py-0.5 text-[9px] font-bold text-black">
+                Chưa có trên Localflix
+              </div>
+            ) : null}
+            {isUnmatchedTop10 && movie.top10NetflixUrl ? (
+              <a
+                href={movie.top10NetflixUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="absolute bottom-1 right-1 z-20 rounded bg-[#e50914] px-2 py-0.5 text-[10px] font-bold text-white hover:bg-[#f6121d]"
+                onClick={(e) => e.stopPropagation()}
+              >
+                Netflix
+              </a>
+            ) : null}
           </div>
         </div>
       ) : (

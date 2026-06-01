@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
 import Icon from "./icon";
 import RoundButton from "./round-button";
@@ -41,6 +42,7 @@ export default function MiniPreviewModal({
   onToggleDislike?: (movie: Movie) => void;
   onPlay?: (movie: Movie) => void;
 }) {
+  const router = useRouter();
   const { movie, top, left, width } = preview;
   const isFav = favoriteSlugs?.has(movie.id) ?? false;
   const isLiked = likedSlugs?.has(movie.id) ?? false;
@@ -91,12 +93,17 @@ export default function MiniPreviewModal({
           <QualityBadge quality={movie.quality} />
         </div>
         <div className="flex flex-wrap items-center gap-1.5 text-[13px] text-white">
-          {movie.genres.map((genre, index) => (
-            <span key={genre} className="flex items-center gap-1.5">
-              {genre}
-              {index < movie.genres.length - 1 ? <span className="h-1 w-1 rounded-full bg-[#646464]" /> : null}
-            </span>
-          ))}
+          {movie.genres.map((genre, index) => {
+            const slug = movie.genreSlugs?.[genre];
+            return (
+              <span key={genre} className="flex items-center gap-1.5">
+                {slug ? (
+                  <button type="button" className="cursor-pointer hover:underline" onClick={() => { onPreviewEnd(); router.push(`/genre/${slug}`); }}>{genre}</button>
+                ) : genre}
+                {index < movie.genres.length - 1 ? <span className="h-1 w-1 rounded-full bg-[#646464]" /> : null}
+              </span>
+            );
+          })}
         </div>
       </div>
     </div>,

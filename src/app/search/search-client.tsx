@@ -10,6 +10,7 @@ import { getStoredProfiles, getStoredSession, getStoredActiveProfileId, saveStor
 import { mapDbMovie, type DbMovie } from "@/lib/movie-format";
 import { profiles, type Movie, type Profile } from "@/data/netflix";
 import type { PreviewState } from "@/components/mini-preview-modal";
+import LoadMoreButton from "@/components/load-more-button";
 
 export default function SearchClient() {
   const router = useRouter();
@@ -17,6 +18,9 @@ export default function SearchClient() {
   const query = searchParams.get("q") || "";
   const [movies, setMovies] = useState<Movie[]>([]);
   const [searching, setSearching] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
   const [activeProfile, setActiveProfile] = useState<Profile | null>(null);
   const [preview, setPreview] = useState<PreviewState | null>(null);
   const [detailMovie, setDetailMovie] = useState<Movie | null>(null);
@@ -40,10 +44,13 @@ export default function SearchClient() {
   useEffect(() => {
     if (!query) { setMovies([]); return; }
     setSearching(true);
-    fetch(`/api/movies?q=${encodeURIComponent(query)}&limit=60`)
+    setPage(1);
+    setHasMore(false);
+    fetch(`/api/movies?q=${encodeURIComponent(query)}&limit=60&page=1`)
       .then((res) => res.json())
       .then((data) => {
         setMovies(data.movies ? (data.movies as DbMovie[]).map(mapDbMovie) : []);
+        setHasMore(data.hasMore ?? false);
       })
       .catch(() => setMovies([]))
       .finally(() => setSearching(false));
@@ -170,6 +177,24 @@ export default function SearchClient() {
     }, 200);
   }, [closing]);
 
+  const loadMore = useCallback(async () => {
+    const nextPage = page + 1;
+    setLoadingMore(true);
+    try {
+      const res = await fetch(`/api/movies?q=${encodeURIComponent(query)}&limit=60&page=${nextPage}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      const m = data.movies ? (data.movies as DbMovie[]).map(mapDbMovie) : [];
+      setMovies((prev) => [...prev, ...m]);
+      setPage(nextPage);
+      setHasMore(data.hasMore ?? false);
+    } catch {
+      // ignore
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [page, query]);
+
   const handlePlay = useCallback((movie: Movie) => {
     router.push(`/watch/${movie.id}`);
   }, [router]);
@@ -225,21 +250,28 @@ export default function SearchClient() {
         seedResult={null}
       />
       {query ? (
-        <SearchResultsGrid
-          query={query}
-          movies={movies}
-          searching={searching}
-          onExpand={handleExpand}
-          onPreview={openPreview}
-          onPreviewEnd={closePreview}
-          onPlay={handlePlay}
-          favoriteSlugs={favoriteSlugs}
-          likedSlugs={likedSlugs}
-          dislikedSlugs={dislikedSlugs}
-          onToggleFavorite={handleToggleFavorite}
-          onToggleLike={handleToggleLike}
-          onToggleDislike={handleToggleDislike}
-        />
+        <>
+          <SearchResultsGrid
+            query={query}
+            movies={movies}
+            searching={searching}
+            onExpand={handleExpand}
+            onPreview={openPreview}
+            onPreviewEnd={closePreview}
+            onPlay={handlePlay}
+            favoriteSlugs={favoriteSlugs}
+            likedSlugs={likedSlugs}
+            dislikedSlugs={dislikedSlugs}
+            onToggleFavorite={handleToggleFavorite}
+            onToggleLike={handleToggleLike}
+            onToggleDislike={handleToggleDislike}
+          />
+          {!searching ? (
+            <div className="px-[4%]">
+              <LoadMoreButton loading={loadingMore} hasMore={hasMore} onClick={loadMore} />
+            </div>
+          ) : null}
+        </>
       ) : (
         <section className="min-h-screen px-[4%] pt-[120px]">
           <div className="max-w-2xl text-[16px] leading-7 text-[#b3b3b3]">

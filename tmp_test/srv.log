@@ -1,0 +1,137 @@
+
+> localflix@0.1.0 predev
+> if exist .next rmdir /s /q .next
+
+
+> localflix@0.1.0 dev
+> next dev
+
+▲ Next.js 16.2.6 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://192.168.110.70:3000
+- Environments: .env
+✓ Ready in 517ms
+
+Persisting failed: Unable to open static sorted file referenced from 00000005.meta
+
+Caused by:
+    0: Unable to open static sorted file 00000003.sst
+    1: Failed to open SST file D:\Users\huynp29052004\Projects\Netflix_UI\localflix\.next\dev\cache/turbopack\ee6e79b1\00000003.sst
+    2: The system cannot find the file specified. (os error 2)
+Compaction failed: Another write batch or compaction is already active (Only a single write operations is allowed at a time)
+Persisting failed: Another write batch or compaction is already active (Only a single write operations is allowed at a time)
+Compaction failed: Another write batch or compaction is already active (Only a single write operations is allowed at a time)
+○ Compiling /browse ...
+ GET /browse 200 in 3.9s (next.js: 3.7s, application-code: 256ms)
+Persisting failed: Another write batch or compaction is already active (Only a single write operations is allowed at a time)
+Persisting failed: Another write batch or compaction is already active (Only a single write operations is allowed at a time)
+getHomeRows: 472.751ms
+/api/home-rows: 474.3ms
+ GET /api/home-rows?profileId=minh 200 in 935ms (next.js: 405ms, application-code: 531ms)
+Persisting failed: Another write batch or compaction is already active (Only a single write operations is allowed at a time)
+Compaction failed: Another write batch or compaction is already active (Only a single write operations is allowed at a time)
+ GET /country/han-quoc 200 in 1177ms (next.js: 1075ms, application-code: 102ms)
+ GET /movies 200 in 486ms (next.js: 421ms, application-code: 65ms)
+ GET /new-popular 200 in 439ms (next.js: 386ms, application-code: 53ms)
+ GET /genre/tinh-cam 200 in 955ms (next.js: 890ms, application-code: 65ms)
+ GET /watch/san-mang 200 in 1989ms (next.js: 1842ms, application-code: 147ms)
+ GET /search?q=tinh%20cam 200 in 485ms (next.js: 429ms, application-code: 55ms)
+ GET /tv-shows 200 in 426ms (next.js: 367ms, application-code: 59ms)
+Persisting failed: Another write batch or compaction is already active (Only a single write operations is allowed at a time)
+Compaction failed: Another write batch or compaction is already active (Only a single write operations is allowed at a time)
+Persisting failed: Another write batch or compaction is already active (Only a single write operations is allowed at a time)
+Compaction failed: Another write batch or compaction is already active (Only a single write operations is allowed at a time)
+Persisting failed: Another write batch or compaction is already active (Only a single write operations is allowed at a time)
+Compaction failed: Another write batch or compaction is already active (Only a single write operations is allowed at a time)
+ GET / 200 in 1152ms (next.js: 1026ms, application-code: 126ms)
+ GET /browse 200 in 47ms (next.js: 10ms, application-code: 37ms)
+ GET /api/interactions?profileId=cmptb1v0c0h85mgh458r1qnbm 200 in 336ms (next.js: 263ms, application-code: 74ms)
+/api/tags group=quoc-gia: 13.154ms
+  returned: 24/24 tags with movies
+ GET /api/tags?group=quoc-gia 200 in 348ms (next.js: 322ms, application-code: 26ms)
+/api/tags group=the-loai: 30.055ms
+  returned: 21/24 tags with movies
+ GET /api/tags?group=the-loai 200 in 349ms (next.js: 311ms, application-code: 38ms)
+getHomeRows: 471.859ms
+/api/home-rows: 472.567ms
+ GET /api/home-rows?profileId=cmptb1v0c0h85mgh458r1qnbm 200 in 504ms (next.js: 8ms, application-code: 496ms)
+[browser] Uncaught Error: Invalid src prop (https://dnm.nflximg.net/api/v6/E8vDc_W8CLv7-yMQu8KMEC7Rrr8/AAAABeGCnjPLPcJ2BejWcgDwbbzpIl4xNk_XbqVzsaVQe_tRUcRwXcBnH9YorA1CwL3t46dHifS0qJQXDX4WQlhdar5Z732lW3FhWmPM.jpg?r=a93) on `next/image`, hostname "dnm.nflximg.net" is not configured under images in your `next.config.js`
+See more info: https://nextjs.org/docs/messages/next-image-unconfigured-host
+    at Array.map (<anonymous>)
+    at MovieCard (src/components/movie-card.tsx:64:13)
+    at <unknown> (src/components/movie-row.tsx:108:19)
+    at Array.map (<anonymous>)
+    at <unknown> (src/components/movie-row.tsx:107:29)
+    at Array.map (<anonymous>)
+    at MovieRow (src/components/movie-row.tsx:95:22)
+    at <unknown> (src/components/browse.tsx:269:17)
+    at Array.map (<anonymous>)
+    at Browse (src/components/browse.tsx:266:22)
+    at BrowseContent (src/app/browse/browse-client.tsx:29:10)
+    at BrowseClient (src/app/browse/browse-client.tsx:39:7)
+    at BrowsePage (src\app\browse\page.tsx:11:7)
+  62 |           </div>
+  63 |           <div className="relative z-10 h-full aspect-[7/10] -ml-[7%] overflow-hidden bg-[...
+> 64 |             <Image
+     |             ^
+  65 |               src={movie.image}
+  66 |               alt={movie.title}
+  67 |               fill
+Persisting failed: Another write batch or compaction is already active (Only a single write operations is allowed at a time)
+Compaction failed: Another write batch or compaction is already active (Only a single write operations is allowed at a time)
+ GET / 200 in 112ms (next.js: 16ms, application-code: 97ms)
+ GET /browse 200 in 37ms (next.js: 6ms, application-code: 32ms)
+/api/tags group=the-loai: 33.126ms
+  returned: 21/24 tags with movies
+ GET /api/tags?group=the-loai 200 in 50ms (next.js: 5ms, application-code: 45ms)
+/api/tags group=quoc-gia: 29.264ms
+  returned: 24/24 tags with movies
+ GET /api/tags?group=quoc-gia 200 in 52ms (next.js: 17ms, application-code: 35ms)
+ GET /api/interactions?profileId=cmptb1v0c0h85mgh458r1qnbm 200 in 45ms (next.js: 17ms, application-code: 28ms)
+getHomeRows: 252.489ms
+/api/home-rows: 253.123ms
+ GET /api/home-rows?profileId=cmptb1v0c0h85mgh458r1qnbm 200 in 264ms (next.js: 3ms, application-code: 261ms)
+[browser] Uncaught Error: Invalid src prop (https://dnm.nflximg.net/api/v6/E8vDc_W8CLv7-yMQu8KMEC7Rrr8/AAAABeGCnjPLPcJ2BejWcgDwbbzpIl4xNk_XbqVzsaVQe_tRUcRwXcBnH9YorA1CwL3t46dHifS0qJQXDX4WQlhdar5Z732lW3FhWmPM.jpg?r=a93) on `next/image`, hostname "dnm.nflximg.net" is not configured under images in your `next.config.js`
+See more info: https://nextjs.org/docs/messages/next-image-unconfigured-host
+    at Array.map (<anonymous>)
+    at MovieCard (src/components/movie-card.tsx:64:13)
+    at <unknown> (src/components/movie-row.tsx:108:19)
+    at Array.map (<anonymous>)
+    at <unknown> (src/components/movie-row.tsx:107:29)
+    at Array.map (<anonymous>)
+    at MovieRow (src/components/movie-row.tsx:95:22)
+    at <unknown> (src/components/browse.tsx:269:17)
+    at Array.map (<anonymous>)
+    at Browse (src/components/browse.tsx:266:22)
+    at BrowseContent (src/app/browse/browse-client.tsx:29:10)
+    at BrowseClient (src/app/browse/browse-client.tsx:39:7)
+    at BrowsePage (src\app\browse\page.tsx:11:7)
+  62 |           </div>
+  63 |           <div className="relative z-10 h-full aspect-[7/10] -ml-[7%] overflow-hidden bg-[...
+> 64 |             <Image
+     |             ^
+  65 |               src={movie.image}
+  66 |               alt={movie.title}
+  67 |               fill
+Persisting failed: Another write batch or compaction is already active (Only a single write operations is allowed at a time)
+Compaction failed: Another write batch or compaction is already active (Only a single write operations is allowed at a time)
+Compaction failed: Another write batch or compaction is already active (Only a single write operations is allowed at a time)
+Persisting failed: Another write batch or compaction is already active (Only a single write operations is allowed at a time)
+Compaction failed: Another write batch or compaction is already active (Only a single write operations is allowed at a time)
+Persisting failed: Another write batch or compaction is already active (Only a single write operations is allowed at a time)
+Compaction failed: Another write batch or compaction is already active (Only a single write operations is allowed at a time)
+Persisting failed: Another write batch or compaction is already active (Only a single write operations is allowed at a time)
+Persisting failed: Another write batch or compaction is already active (Only a single write operations is allowed at a time)
+✓ Compiled in 322ms
+Persisting failed: Another write batch or compaction is already active (Only a single write operations is allowed at a time)
+Persisting failed: Another write batch or compaction is already active (Only a single write operations is allowed at a time)
+Compaction failed: Another write batch or compaction is already active (Only a single write operations is allowed at a time)
+✓ Compiled in 298ms
+Persisting failed: Another write batch or compaction is already active (Only a single write operations is allowed at a time)
+Persisting failed: Another write batch or compaction is already active (Only a single write operations is allowed at a time)
+Compaction failed: Another write batch or compaction is already active (Only a single write operations is allowed at a time)
+Persisting failed: Another write batch or compaction is already active (Only a single write operations is allowed at a time)
+Persisting failed: Another write batch or compaction is already active (Only a single write operations is allowed at a time)
+Persisting failed: Another write batch or compaction is already active (Only a single write operations is allowed at a time)
+Persisting failed: Another write batch or compaction is already active (Only a single write operations is allowed at a time)
+Compaction failed: Another write batch or compaction is already active (Only a single write operations is allowed at a time)

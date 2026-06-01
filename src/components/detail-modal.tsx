@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import Icon from "./icon";
 import RoundButton from "./round-button";
 import QualityBadge from "./quality-badge";
@@ -14,7 +15,7 @@ type MovieDetail = {
   casts?: string | null; director?: string | null; totalEpisodes?: number | null;
   currentEpisode?: string | null; time?: string | null; quality?: string | null;
   language?: string | null; thumbUrl?: string | null; posterUrl?: string | null;
-  tags?: { name: string; group: string }[]; episodes?: DetailEpisode[];
+  tags?: { name: string; group: string; slug: string }[]; episodes?: DetailEpisode[];
 };
 
 function DetailSkeleton() {
@@ -88,11 +89,13 @@ export default function DetailModal({
     return () => { window.removeEventListener("keydown", onKeyDown); document.body.style.overflow = ""; };
   }, [onClose]);
 
+  const router = useRouter();
   const episodes = detail?.episodes || [];
   const casts = detail?.casts || "";
   const director = detail?.director || "";
   const description = detail?.description || "";
-  const genres = detail?.tags?.filter((t) => t.group === "Thể loại").map((t) => t.name) || movie.genres;
+  const genreTags = detail?.tags?.filter((t) => t.group === "Thể loại") || [];
+  const genres = genreTags.map((t) => t.name).length > 0 ? genreTags.map((t) => t.name) : movie.genres;
   const totalEps = detail?.totalEpisodes;
   const isFetching = loading && !detail;
 
@@ -155,7 +158,7 @@ export default function DetailModal({
                   </p>
                 )}
                 <p><span className="text-[#777777]">Thể loại: </span>
-                  {genres.map((genre, i) => (<span key={i}>{i > 0 && ", "}<button type="button" className="cursor-pointer text-white underline-offset-2 hover:underline" onClick={() => { onSearch?.(genre); onClose(); }}>{genre}</button></span>))}
+                  {genreTags.length > 0 ? genreTags.map((t, i) => (<span key={t.slug}>{i > 0 && ", "}<button type="button" className="cursor-pointer text-white underline-offset-2 hover:underline" onClick={() => { router.push(`/genre/${t.slug}`); onClose(); }}>{t.name}</button></span>)) : genres.map((genre, i) => (<span key={i}>{i > 0 && ", "}<button type="button" className="cursor-pointer text-white underline-offset-2 hover:underline" onClick={() => { onSearch?.(genre); onClose(); }}>{genre}</button></span>))}
                 </p>
                 {director && (
                   <p><span className="text-[#777777]">Đạo diễn: </span>

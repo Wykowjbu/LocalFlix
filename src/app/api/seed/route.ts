@@ -363,20 +363,40 @@ async function syncMovieDetail(movieSlug: string, stats: SyncStats) {
             if (!tagItem?.id || !tagItem?.name) continue;
 
             try {
-              const tag = await prisma.tag.upsert({
-                where: {
-                  groupId_slug: {
-                    groupId: tagGroup.id,
-                    slug: tagItem.id,
-                  },
-                },
-                update: { name: tagItem.name },
-                create: {
-                  groupId: tagGroup.id,
-                  name: tagItem.name,
-                  slug: tagItem.id,
-                },
+              const canonicalSlug = toSlug(tagItem.name);
+
+              let tag = await prisma.tag.findFirst({
+                where: { groupId: tagGroup.id, name: tagItem.name },
               });
+
+              if (tag) {
+                if (tag.slug !== canonicalSlug) {
+                  tag = await prisma.tag.update({
+                    where: { id: tag.id },
+                    data: { slug: canonicalSlug, name: tagItem.name },
+                  });
+                } else if (tag.name !== tagItem.name) {
+                  tag = await prisma.tag.update({
+                    where: { id: tag.id },
+                    data: { name: tagItem.name },
+                  });
+                }
+              } else {
+                tag = await prisma.tag.upsert({
+                  where: {
+                    groupId_slug: {
+                      groupId: tagGroup.id,
+                      slug: canonicalSlug,
+                    },
+                  },
+                  update: { name: tagItem.name },
+                  create: {
+                    groupId: tagGroup.id,
+                    name: tagItem.name,
+                    slug: canonicalSlug,
+                  },
+                });
+              }
 
               nextTagIds.add(tag.id);
 
@@ -683,10 +703,14 @@ export async function POST(request: Request) {
   await seedFixedTags();
 
   // Fire-and-forget: trigger Top 10 scrape after sync (non-blocking)
+  const top10Headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (process.env.SEED_SECRET) {
+    top10Headers['x-seed-secret'] = process.env.SEED_SECRET;
+  }
   fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/seed/top10`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-  }).catch(() => {});
+    headers: top10Headers,
+  }).catch((err) => { console.warn('Top 10 sync failed (non-blocking):', err?.message); });
 
   return Response.json({
     success: true,

@@ -5,6 +5,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import Icon from "./icon";
 import NetflixLogo from "./netflix-logo";
+import TagDropdown from "./tag-dropdown";
 import type { Profile } from "@/data/netflix";
 
 export default function TopNav({
@@ -114,6 +115,8 @@ export default function TopNav({
               {item.label}
             </a>
           ))}
+          <TagDropdown group="the-loai" label="Thể loại" hrefPrefix="/genre" />
+          <TagDropdown group="quoc-gia" label="Quốc gia" hrefPrefix="/country" />
         </nav>
         <button className="flex items-center gap-1 text-white md:hidden">
           Duyệt tìm <Icon name="chevron" className="h-4 w-4 rotate-90" />

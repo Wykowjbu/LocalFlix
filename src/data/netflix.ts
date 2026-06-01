@@ -21,6 +21,7 @@ export type Movie = {
   duration: string;
   quality: string;
   genres: string[];
+  genreSlugs?: Record<string, string>;
   top10?: number;
   isNew?: boolean;
   // Watch history fields
@@ -29,6 +30,11 @@ export type Movie = {
   episodeSlug?: string | null;
   serverName?: string | null;
   episodeLabel?: string;
+  // Top 10 fields
+  top10Rank?: number;
+  top10ImageUrl?: string | null;
+  top10NetflixUrl?: string | null;
+  top10MatchStatus?: string;
 };
 
 export type MovieRow = {

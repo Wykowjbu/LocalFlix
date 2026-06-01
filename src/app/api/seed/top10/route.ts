@@ -21,192 +21,307 @@ type ScrapeResult = {
   tv: Top10Entry[];
 };
 
-async function scrapeTudum(): Promise<ScrapeResult | null> {
+type ScrapeSourceResult = {
+  name: string;
+  success: boolean;
+  reason?: string;
+};
+
+const TITLE_FETCH_CONCURRENCY = 5;
+const NETFLIX_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+
+function extractTitleFromHtml(html: string): string | null {
+  const match = html.match(/<title[^>]*>([^<]*)<\/title>/);
+  if (!match) return null;
+  const title = match[1]
+    .replace(/\s*\|\s*(Netflix Official Site|Netflix)\s*$/i, '')
+    .replace(/^Watch\s+/i, '')
+    .trim();
+  return title || null;
+}
+
+async function fetchTitleForVideoId(videoId: string): Promise<{ title: string | null; netflixUrl: string }> {
+  const url = `https://www.netflix.com/title/${videoId}`;
   try {
-    const res = await fetch('https://top10.netflix.com/', {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': NETFLIX_UA, 'Accept-Language': 'en-US,en;q=0.9' },
+      redirect: 'follow',
       signal: AbortSignal.timeout(10000),
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'application/json, text/html',
-      },
     });
-
-    if (!res.ok) return null;
-
     const html = await res.text();
+    return { title: extractTitleFromHtml(html), netflixUrl: res.url };
+  } catch {
+    return { title: null, netflixUrl: url };
+  }
+}
 
-    // Try to find __NEXT_DATA__ or JSON data in the page
-    const nextDataMatch = html.match(/<script id="__NEXT_DATA__"[^>]*>({.*?})<\/script>/);
-    if (nextDataMatch) {
-      const data = JSON.parse(nextDataMatch[1]);
-      // Extract top 10 data from the Next.js page props
-      return extractFromNextData(data);
-    }
+async function batchFetchTitles(videoIds: string[]): Promise<Map<string, { title: string; netflixUrl: string }>> {
+  const uniqueIds = [...new Set(videoIds)];
+  const result = new Map<string, { title: string; netflixUrl: string }>();
+  const queue = [...uniqueIds];
+  let idx = 0;
 
-    // Try to find a JSON endpoint the page uses
-    const apiUrlMatch = html.match(/"(https:\/\/[^"]*top10[^"]*\.json)"/);
-    if (apiUrlMatch) {
-      const apiRes = await fetch(apiUrlMatch[1], { signal: AbortSignal.timeout(10000) });
-      if (apiRes.ok) {
-        const data = await apiRes.json();
-        return extractFromApiJson(data);
+  async function worker() {
+    while (idx < queue.length) {
+      const videoId = queue[idx++];
+      const { title, netflixUrl } = await fetchTitleForVideoId(videoId);
+      if (title) {
+        result.set(videoId, { title, netflixUrl });
       }
     }
+  }
 
-    return null;
+  await Promise.all(Array.from({ length: TITLE_FETCH_CONCURRENCY }, () => worker()));
+  return result;
+}
+
+function extractGraphqlJson(html: string): Record<string, unknown> | null {
+  const match = html.match(/netflix\.reactContext\.models\.graphql\s*=\s*JSON\.parse\('([\s\S]*?)'\)/);
+  if (!match) return null;
+  const jsonStr = match[1]
+    .replace(/\\x27/g, "'")
+    .replace(/\\'/g, "'")
+    .replace(/\\"/g, '"')
+    .replace(/\\n/g, '');
+  try {
+    return JSON.parse(jsonStr) as Record<string, unknown>;
   } catch {
     return null;
   }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function extractFromNextData(data: any): ScrapeResult | null {
-  try {
-    const props = data?.props?.pageProps;
-    if (!props) return null;
+function parseTop10Items(graphql: Record<string, unknown>, titleMap: Map<string, { title: string; netflixUrl: string }>): Top10Entry[] {
+  const data = graphql.data as Record<string, unknown> | undefined;
+  if (!data) return [];
 
-    const movieEntries: Top10Entry[] = [];
-    const tvEntries: Top10Entry[] = [];
+  const entries: Top10Entry[] = [];
+  const sections: Array<{ name: string; items: Array<{ videoId: string; rank: number; imageUrl?: string; netflixUrl?: string }> }> = [];
 
-    // Try to find top 10 data in various possible structures
-    const top10Data = props.top10 || props.topTen || props.weeklyTop10 || props.weeklyTopTen;
-    if (top10Data && Array.isArray(top10Data)) {
-      for (const item of top10Data) {
-        const entry: Top10Entry = {
-          netflixTitle: item.title || item.name || '',
-          normalizedTitle: normalizeForSearch(item.title || item.name || ''),
-          rank: item.rank || item.position || 0,
-          imageUrl: item.image || item.imageUrl || item.poster,
-          netflixUrl: item.url || item.link || item.netflixUrl,
-          netflixId: item.id || item.netflixId,
-        };
-        if (entry.netflixTitle) {
-          const type = (item.type || '').toLowerCase();
-          if (type === 'tv' || type === 'series' || type === 'show') {
-            tvEntries.push(entry);
-          } else {
-            movieEntries.push(entry);
+  // Find all PulseEntitiesSection with guid "top-10-card-list"
+  for (const key of Object.keys(data)) {
+    const val = data[key] as Record<string, unknown> | undefined;
+    if (!val || val.__typename !== 'PulseEntitiesSection') continue;
+    if (val.guid !== 'top-10-card-list') continue;
+
+    const header = val.header as Record<string, unknown> | undefined;
+    const sectionName = (header?.sectionTitle as string) || 'Unknown';
+    const sectionEntities = val.entities as Array<{ __ref: string }> | undefined;
+    if (!sectionEntities) continue;
+
+    const items: Array<{ videoId: string; rank: number; imageUrl?: string; netflixUrl?: string }> = [];
+    for (const ref of sectionEntities) {
+      const entityKey = ref.__ref;
+      const entity = data[entityKey] as Record<string, unknown> | undefined;
+      if (!entity) continue;
+
+      const top10 = entity.top10 as Record<string, unknown> | undefined;
+      if (!top10) continue;
+
+      const videoId = String(top10.videoId ?? '');
+      const rank = (top10.weeklyRank as number) || 0;
+      if (!videoId || rank < 1 || rank > 10) continue;
+
+      // Extract image URL from artwork
+      const artwork = entity.artwork as Record<string, unknown> | undefined;
+      let imageUrl: string | undefined;
+      if (artwork) {
+        const storyArt = artwork.storyArt as Record<string, unknown> | undefined;
+        if (storyArt) {
+          const sizedKey = Object.keys(storyArt).find(k => k.startsWith('urlsSized'));
+          if (sizedKey) {
+            const urls = storyArt[sizedKey] as Array<Record<string, unknown>> | undefined;
+            imageUrl = urls?.[0]?.url as string | undefined;
           }
         }
-      }
-    }
-
-    if (movieEntries.length > 0 || tvEntries.length > 0) {
-      return { movie: movieEntries, tv: tvEntries };
-    }
-
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function extractFromApiJson(data: any): ScrapeResult | null {
-  try {
-    const movieEntries: Top10Entry[] = [];
-    const tvEntries: Top10Entry[] = [];
-
-    // Try common API response formats
-    const items = data.items || data.entries || data.results || data;
-    if (Array.isArray(items)) {
-      for (const item of items) {
-        const entry: Top10Entry = {
-          netflixTitle: item.title || item.name || '',
-          normalizedTitle: normalizeForSearch(item.title || item.name || ''),
-          rank: item.rank || item.position || 0,
-          imageUrl: item.image || item.imageUrl || item.poster || item.thumbnail,
-          netflixUrl: item.url || item.link || item.netflixUrl,
-          netflixId: item.id || item.netflixId,
-        };
-        if (entry.netflixTitle) {
-          const type = (item.type || '').toLowerCase();
-          if (type === 'tv' || type === 'series' || type === 'show') {
-            tvEntries.push(entry);
-          } else {
-            movieEntries.push(entry);
-          }
-        }
-      }
-    }
-
-    if (movieEntries.length > 0 || tvEntries.length > 0) {
-      return { movie: movieEntries, tv: tvEntries };
-    }
-
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-async function scrapeFlixPatrol(): Promise<ScrapeResult | null> {
-  try {
-    const sources = [
-      { url: 'https://flixpatrol.com/top10/netflix/vietnam/', type: 'country' },
-      { url: 'https://flixpatrol.com/top10/netflix/world/', type: 'world' },
-    ];
-
-    for (const source of sources) {
-      try {
-        const res = await fetch(source.url, {
-          signal: AbortSignal.timeout(15000),
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          },
-        });
-
-        if (!res.ok) continue;
-        const html = await res.text();
-
-        // Try to find JSON data embedded in the page
-        const jsonMatch = html.match(/<script[^>]*id="__NEXT_DATA__"[^>]*>({.*?})<\/script>/);
-        if (jsonMatch) {
-          const data = JSON.parse(jsonMatch[1]);
-          const result = extractFromNextData(data);
-          if (result && (result.movie.length > 0 || result.tv.length > 0)) {
-            return result;
-          }
-        }
-
-        // Try to find table-based data
-        const tableRows = html.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/g);
-        const movieEntries: Top10Entry[] = [];
-        const tvEntries: Top10Entry[] = [];
-
-        for (const row of tableRows) {
-          const cells = row[1].match(/<td[^>]*>([\s\S]*?)<\/td>/g);
-          if (!cells || cells.length < 3) continue;
-
-          const titleMatch = row[1].match(/<a[^>]*>([^<]*)<\/a>/);
-          const rankMatch = row[1].match(/<td[^>]*>\s*(\d+)\s*<\/td>/);
-
-          if (titleMatch && rankMatch) {
-            const title = titleMatch[1].trim();
-            const rank = parseInt(rankMatch[1], 10);
-            if (title && rank >= 1 && rank <= 10) {
-              const entry: Top10Entry = {
-                netflixTitle: title,
-                normalizedTitle: normalizeForSearch(title),
-                rank,
-              };
-              movieEntries.push(entry);
+        if (!imageUrl) {
+          const sdpArt = artwork.sdpArt as Record<string, unknown> | undefined;
+          if (sdpArt) {
+            const sizedKey = Object.keys(sdpArt).find(k => k.startsWith('urlsSized'));
+            if (sizedKey) {
+              const urls = sdpArt[sizedKey] as Array<Record<string, unknown>> | undefined;
+              imageUrl = urls?.[0]?.url as string | undefined;
             }
           }
         }
+      }
 
-        if (movieEntries.length > 0) {
-          return { movie: movieEntries, tv: [] };
+      const titleInfo = titleMap.get(videoId);
+      const netflixUrl = titleInfo?.netflixUrl || `https://www.netflix.com/title/${videoId}`;
+
+      items.push({ videoId, rank, imageUrl, netflixUrl });
+    }
+
+    sections.push({ name: sectionName, items });
+  }
+
+  for (const section of sections) {
+    for (const item of section.items) {
+      const titleInfo = titleMap.get(item.videoId);
+      const netflixTitle = titleInfo?.title || '';
+      if (!netflixTitle) continue;
+
+      const entry: Top10Entry = {
+        netflixTitle,
+        normalizedTitle: normalizeForSearch(netflixTitle),
+        rank: item.rank,
+        imageUrl: item.imageUrl,
+        netflixUrl: item.netflixUrl,
+        netflixId: item.videoId,
+      };
+      entries.push(entry);
+    }
+  }
+
+  return entries;
+}
+
+async function scrapeTudum(sources: ScrapeSourceResult[]): Promise<ScrapeResult | null> {
+  const pages = [
+    { url: 'https://top10.netflix.com/', label: 'movies' },
+    { url: 'https://top10.netflix.com/tv', label: 'tv' },
+  ];
+
+  const allEntries: Top10Entry[] = [];
+  const allVideoIds: string[] = [];
+
+  // First pass: fetch pages and extract GraphQL + videoIds
+  for (const page of pages) {
+    try {
+      const res = await fetch(page.url, {
+        signal: AbortSignal.timeout(15000),
+        headers: {
+          'User-Agent': NETFLIX_UA,
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9,vi;q=0.8',
+          'Referer': 'https://www.google.com/',
+        },
+      });
+
+      if (!res.ok) {
+        sources.push({ name: `tudum-${page.label}`, success: false, reason: `HTTP ${res.status}` });
+        continue;
+      }
+
+      const html = await res.text();
+      const graphql = extractGraphqlJson(html);
+      if (!graphql) {
+        sources.push({ name: `tudum-${page.label}`, success: false, reason: 'GraphQL data not found in HTML' });
+        continue;
+      }
+
+      // Collect videoIds from this page
+      const data = graphql.data as Record<string, unknown> | undefined;
+      if (data) {
+        for (const key of Object.keys(data)) {
+          const val = data[key] as Record<string, unknown> | undefined;
+          if (!val || val.__typename !== 'PulseEntitiesSection') continue;
+          if (val.guid !== 'top-10-card-list') continue;
+          const sectionEntities = val.entities as Array<{ __ref: string }> | undefined;
+          if (!sectionEntities) continue;
+          for (const ref of sectionEntities) {
+            const entity = data[ref.__ref] as Record<string, unknown> | undefined;
+            if (entity) {
+              const top10 = entity.top10 as Record<string, unknown> | undefined;
+              if (top10?.videoId) allVideoIds.push(String(top10.videoId));
+            }
+          }
+        }
+      }
+
+      sources.push({ name: `tudum-${page.label}`, success: true, reason: 'GraphQL parsed' });
+      allEntries.push(...parseTop10Items(graphql, new Map()));
+    } catch (err) {
+      sources.push({ name: `tudum-${page.label}`, success: false, reason: err instanceof Error ? err.message : 'Unknown error' });
+    }
+  }
+
+  // Second pass: fetch titles for all videoIds
+  if (allVideoIds.length > 0) {
+    const titleMap = await batchFetchTitles(allVideoIds);
+    sources.push({ name: 'tudum-titles', success: titleMap.size > 0, reason: `${titleMap.size}/${allVideoIds.length} titles fetched` });
+
+    // Re-parse with real titles
+    const movieEntries: Top10Entry[] = [];
+    const tvEntries: Top10Entry[] = [];
+
+    for (const page of pages) {
+      try {
+        const res = await fetch(page.url, {
+          signal: AbortSignal.timeout(15000),
+          headers: { 'User-Agent': NETFLIX_UA, 'Accept-Language': 'en-US,en;q=0.9' },
+        });
+        if (!res.ok) continue;
+        const html = await res.text();
+        const graphql = extractGraphqlJson(html);
+        if (!graphql) continue;
+
+        const items = parseTop10Items(graphql, titleMap);
+        const isTv = page.label === 'tv';
+        for (const item of items) {
+          if (isTv) tvEntries.push(item);
+          else movieEntries.push(item);
         }
       } catch {
-        continue;
+        // skip
       }
     }
 
-    return null;
-  } catch {
-    return null;
+    if (movieEntries.length > 0 || tvEntries.length > 0) {
+      return { movie: movieEntries, tv: tvEntries };
+    }
   }
+
+  return null;
+}
+
+async function scrapeFlixPatrol(sources: ScrapeSourceResult[]): Promise<ScrapeResult | null> {
+  const urls = [
+    'https://flixpatrol.com/top10/netflix/vietnam/',
+    'https://flixpatrol.com/top10/netflix/world/',
+  ];
+
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, {
+        signal: AbortSignal.timeout(15000),
+        headers: { 'User-Agent': NETFLIX_UA, 'Accept': 'text/html,*/*', 'Accept-Language': 'en-US,en;q=0.9' },
+      });
+
+      if (!res.ok) {
+        sources.push({ name: `flixpatrol`, success: false, reason: `HTTP ${res.status} - blocked by Cloudflare` });
+        continue;
+      }
+
+      const html = await res.text();
+      const movieEntries: Top10Entry[] = [];
+      const rows = html.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/g);
+      for (const row of rows) {
+        const titleA = row[1].match(/<a[^>]*>([^<]*)<\/a>/);
+        const rankTd = row[1].match(/<td[^>]*>\s*(\d+)\s*<\/td>/);
+        if (titleA && rankTd) {
+          const title = titleA[1].trim();
+          const rank = parseInt(rankTd[1], 10);
+          if (title && rank >= 1 && rank <= 10) {
+            movieEntries.push({
+              netflixTitle: title,
+              normalizedTitle: normalizeForSearch(title),
+              rank,
+            });
+          }
+        }
+      }
+
+      if (movieEntries.length > 0) {
+        sources.push({ name: 'flixpatrol', success: true, reason: `${movieEntries.length} items from ${url}` });
+        return { movie: movieEntries, tv: [] };
+      }
+    } catch {
+      // skip
+    }
+  }
+
+  sources.push({ name: 'flixpatrol', success: false, reason: 'No data from any URL' });
+  return null;
 }
 
 async function matchWithDb(entries: Top10Entry[]): Promise<Top10Entry[]> {
@@ -300,50 +415,64 @@ async function saveToDb(type: string, entries: Top10Entry[], weekLabel: string):
 }
 
 export async function POST(request: NextRequest) {
+  const secret = request.headers.get('x-seed-secret');
+  const canRun =
+    (process.env.SEED_SECRET && secret === process.env.SEED_SECRET) ||
+    process.env.NODE_ENV === 'development';
+
+  if (!canRun) {
+    return Response.json({ error: 'Unauthorized' }, { status: 403 });
+  }
+
   const searchParams = request.nextUrl.searchParams;
-  const forceSource = searchParams.get('source'); // Optional: force a specific source
+  const forceSource = searchParams.get('source');
   const weekLabel = getCurrentWeekLabel();
 
+  const sources: ScrapeSourceResult[] = [];
   let result: ScrapeResult | null = null;
+  let usedSource = '';
 
   // Priority 1: Tudum
   if (!forceSource || forceSource === 'tudum') {
-    result = await scrapeTudum();
+    result = await scrapeTudum(sources);
+    if (result) usedSource = 'tudum';
   }
 
   // Priority 2: FlixPatrol
   if (!result && (!forceSource || forceSource === 'flixpatrol')) {
-    result = await scrapeFlixPatrol();
+    result = await scrapeFlixPatrol(sources);
+    if (result) usedSource = 'flixpatrol';
   }
 
   if (!result) {
-    // If all sources failed, return error
     return Response.json({
       success: false,
       error: 'Không thể lấy dữ liệu Top 10 từ tất cả các nguồn.',
+      sources,
     }, { status: 502 });
   }
 
-  // Match with DB
   const matchedMovies = await matchWithDb(result.movie);
   const matchedTv = await matchWithDb(result.tv);
 
-  // Save to DB
   const moviesSaved = await saveToDb('movie', matchedMovies, weekLabel);
   const tvSaved = await saveToDb('tv', matchedTv, weekLabel);
 
+  const matchedCount = [...matchedMovies, ...matchedTv].filter((e) => e.matchStatus === 'matched').length;
+  const pendingCount = [...matchedMovies, ...matchedTv].filter((e) => e.matchStatus === 'pending').length;
+  const notFoundCount = [...matchedMovies, ...matchedTv].filter((e) => e.matchStatus === 'not_found').length;
+
   return Response.json({
     success: true,
+    source: usedSource,
+    sources,
     weekLabel,
     moviesSaved,
     tvSaved,
     movieCount: matchedMovies.length,
     tvCount: matchedTv.length,
-    matchedCount: matchedMovies.filter((e) => (e as Record<string, unknown>).matchStatus === 'matched').length +
-      matchedTv.filter((e) => (e as Record<string, unknown>).matchStatus === 'matched').length,
-    pendingCount: matchedMovies.filter((e) => (e as Record<string, unknown>).matchStatus === 'pending').length +
-      matchedTv.filter((e) => (e as Record<string, unknown>).matchStatus === 'pending').length,
-    notFoundCount: matchedMovies.filter((e) => (e as Record<string, unknown>).matchStatus === 'not_found').length +
-      matchedTv.filter((e) => (e as Record<string, unknown>).matchStatus === 'not_found').length,
+    matchedCount,
+    pendingCount,
+    notFoundCount,
   });
 }

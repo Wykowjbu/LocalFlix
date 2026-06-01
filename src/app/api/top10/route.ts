@@ -4,50 +4,69 @@ import { getCurrentWeekLabel } from '@/lib/top10-utils';
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
-  const week = searchParams.get('week') || getCurrentWeekLabel();
+  const userProvidedWeek = searchParams.get('week');
   const type = searchParams.get('type'); // 'movie' | 'tv' | undefined (both)
   const country = searchParams.get('country') || 'vietnam';
 
-  const where: Record<string, unknown> = {
-    country,
-    weekLabel: week,
+  let week = userProvidedWeek || getCurrentWeekLabel();
+  let usedFallbackWeek = false;
+
+  const buildWhere = (w: string) => {
+    const wObj: Record<string, unknown> = { country, weekLabel: w };
+    if (type === 'movie' || type === 'tv') wObj.type = type;
+    return wObj;
   };
 
-  if (type === 'movie' || type === 'tv') {
-    where.type = type;
-  }
-
-  const entries = await prisma.netflixTop10.findMany({
-    where,
-    orderBy: [
-      { type: 'asc' },
-      { rank: 'asc' },
-    ],
+  let entries = await prisma.netflixTop10.findMany({
+    where: buildWhere(week),
+    orderBy: [{ type: 'asc' }, { rank: 'asc' }],
     include: {
       matchedMovie: {
-        select: {
-          slug: true,
-          name: true,
-          originalName: true,
-          thumbUrl: true,
-          posterUrl: true,
-        },
+        select: { slug: true, name: true, originalName: true, thumbUrl: true, posterUrl: true },
       },
     },
   });
+
+  // Fallback: if current week has no data and no explicit week was requested, find latest available week
+  if (entries.length === 0 && !userProvidedWeek) {
+    const latest = await prisma.netflixTop10.findFirst({
+      where: { country },
+      orderBy: { weekLabel: 'desc' },
+      select: { weekLabel: true },
+    });
+    if (latest && latest.weekLabel !== week) {
+      week = latest.weekLabel;
+      usedFallbackWeek = true;
+      entries = await prisma.netflixTop10.findMany({
+        where: buildWhere(week),
+        orderBy: [{ type: 'asc' }, { rank: 'asc' }],
+        include: {
+          matchedMovie: {
+            select: { slug: true, name: true, originalName: true, thumbUrl: true, posterUrl: true },
+          },
+        },
+      });
+    }
+  }
 
   const grouped = {
     movie: entries.filter((e) => e.type === 'movie'),
     tv: entries.filter((e) => e.type === 'tv'),
   };
 
-  return Response.json({
+  const response: Record<string, unknown> = {
     week,
     country,
     entries,
     grouped,
     total: entries.length,
-  });
+  };
+  if (usedFallbackWeek) {
+    response.requestedWeek = userProvidedWeek || getCurrentWeekLabel();
+    response.usedFallbackWeek = true;
+  }
+
+  return Response.json(response);
 }
 
 export async function POST(request: NextRequest) {

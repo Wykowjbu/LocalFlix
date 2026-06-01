@@ -11,6 +11,7 @@ import { getStoredProfiles, getStoredSession, getStoredActiveProfileId, saveStor
 import { mapDbMovie, type DbMovie } from "@/lib/movie-format";
 import { profiles, type Movie, type Profile } from "@/data/netflix";
 import type { PreviewState } from "@/components/mini-preview-modal";
+import LoadMoreButton from "@/components/load-more-button";
 
 export default function BrowseByType({
   title,
@@ -23,6 +24,9 @@ export default function BrowseByType({
   const [movies, setMovies] = useState<Movie[]>([]);
   const [allMovies, setAllMovies] = useState<Movie[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
   const [activeProfile, setActiveProfile] = useState<Profile | null>(null);
   const [preview, setPreview] = useState<PreviewState | null>(null);
   const [detailMovie, setDetailMovie] = useState<Movie | null>(null);
@@ -57,15 +61,17 @@ export default function BrowseByType({
     if (!activeProfile) return;
     setLoading(true);
     Promise.all([
-      fetch(`/api/movies?${apiParams}&limit=50`).then((res) => res.json()),
+      fetch(`/api/movies?${apiParams}&limit=50&page=1`).then((res) => res.json()),
       loadInteractions(activeProfile.id),
     ])
       .then(([data]) => {
         const m = data.movies ? (data.movies as DbMovie[]).map(mapDbMovie) : [];
         setAllMovies(m);
         setMovies(m.slice(0, 20));
+        setHasMore(data.hasMore ?? false);
+        setPage(1);
       })
-      .catch(() => { setAllMovies([]); setMovies([]); })
+      .catch(() => { setAllMovies([]); setMovies([]); setHasMore(false); })
       .finally(() => setLoading(false));
   }, [activeProfile, apiParams, loadInteractions]);
 
@@ -176,6 +182,25 @@ export default function BrowseByType({
     }, 200);
   }, [closing]);
 
+  const loadMore = useCallback(async () => {
+    const nextPage = page + 1;
+    setLoadingMore(true);
+    try {
+      const res = await fetch(`/api/movies?${apiParams}&limit=50&page=${nextPage}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      const m = data.movies ? (data.movies as DbMovie[]).map(mapDbMovie) : [];
+      setMovies((prev) => [...prev, ...m]);
+      setAllMovies((prev) => [...prev, ...m]);
+      setPage(nextPage);
+      setHasMore(data.hasMore ?? false);
+    } catch {
+      // ignore
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [page, apiParams]);
+
   const handlePlay = useCallback((movie: Movie) => {
     router.push(`/watch/${movie.id}`);
   }, [router]);
@@ -250,6 +275,11 @@ export default function BrowseByType({
             Không tìm thấy phim nào.
           </div>
         )}
+        {!loading ? (
+          <div className="px-[4%]">
+            <LoadMoreButton loading={loadingMore} hasMore={hasMore} onClick={loadMore} />
+          </div>
+        ) : null}
       </div>
       {preview ? (
         <MiniPreviewModal preview={preview} onKeepOpen={keepPreviewOpen} onPreviewEnd={closePreviewNow} onExpand={(movie) => { closePreviewNow(); setDetailMovie(movie); }} {...interactionProps} />

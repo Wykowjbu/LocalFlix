@@ -1,0 +1,22 @@
+
+> localflix@0.1.0 predev
+> if exist .next rmdir /s /q .next
+
+
+> localflix@0.1.0 dev
+> next dev
+
+⚠ Port 3000 is in use by process 23624, using available port 3001 instead.
+▲ Next.js 16.2.6 (Turbopack)
+- Local:         http://localhost:3001
+- Network:       http://192.168.110.70:3001
+- Environments: .env
+✓ Ready in 969ms
+
+Persisting failed: Unable to open static sorted file referenced from 00000005.meta
+
+Caused by:
+    0: Unable to open static sorted file 00000003.sst
+    1: Failed to open SST file D:\Users\huynp29052004\Projects\Netflix_UI\localflix\.next\dev\cache/turbopack\ee6e79b1\00000003.sst
+    2: The system cannot find the file specified. (os error 2)
+Compaction failed: Another write batch or compaction is already active (Only a single write operations is allowed at a time)

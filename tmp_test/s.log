@@ -1,0 +1,15 @@
+
+> localflix@0.1.0 predev
+> if exist .next rmdir /s /q .next
+
+
+> localflix@0.1.0 dev
+> next dev
+
+⚠ Port 3000 is in use by process 20940, using available port 3001 instead.
+▲ Next.js 16.2.6 (Turbopack)
+- Local:         http://localhost:3001
+- Network:       http://192.168.110.70:3001
+- Environments: .env
+✓ Ready in 582ms
+

@@ -10,7 +10,9 @@
     "start": "next start",
     "lint": "eslint",
     "clean": "if exist .next rmdir /s /q .next",
-    "db:backfill-searchtext": "npx tsx src/scripts/backfill-searchtext.ts"
+    "db:backfill-searchtext": "npx tsx src/scripts/backfill-searchtext.ts",
+    "db:cleanup-genre-tags": "npx tsx src/scripts/cleanup-genre-tags.ts",
+    "db:cleanup-genre-tags:dry-run": "npx tsx src/scripts/cleanup-genre-tags.ts --dry-run"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",

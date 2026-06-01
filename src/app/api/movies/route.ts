@@ -6,7 +6,7 @@ import { normalizeForSearch, tokenize, prepareMovie, scorePrepared } from '@/lib
 const LIST_MOVIE_SELECT = {
   slug: true, name: true, originalName: true,
   thumbUrl: true, posterUrl: true, time: true, quality: true,
-  tags: { select: { tag: { select: { name: true, group: { select: { name: true } } } } } },
+  tags: { select: { tag: { select: { name: true, slug: true, group: { select: { name: true } } } } } },
 } as const;
 
 // Full select for detail mode
@@ -14,6 +14,11 @@ const DETAIL_MOVIE_INCLUDE = {
   episodes: { select: { id: true } },
   tags: { include: { tag: { include: { group: true } } } },
 } as const;
+
+// Generate a URL-friendly slug from a tag name (for genre URLs)
+function slugifyTagName(name: string): string {
+  return normalizeForSearch(name).replace(/\s+/g, '-');
+}
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function formatMovie(m: any, options?: { withEpisodes?: boolean }) {
@@ -32,8 +37,9 @@ function formatMovie(m: any, options?: { withEpisodes?: boolean }) {
     director: m.director,
     casts: m.casts,
     episodeCount: m.episodes?.length ?? 0,
-    tags: m.tags?.map((mt: { tag: { name: string; group: { name: string } } }) => ({
+    tags: m.tags?.map((mt: { tag: { name: string; slug: string; group: { name: string } } }) => ({
       name: mt.tag.name,
+      slug: slugifyTagName(mt.tag.name),
       group: mt.tag.group.name,
     })) ?? [],
     position: m.collections?.[0]?.position ?? null,
@@ -67,8 +73,9 @@ function formatListMovie(m: any) {
     posterUrl: m.posterUrl,
     time: m.time,
     quality: m.quality,
-    tags: m.tags?.map((mt: { tag: { name: string; group: { name: string } } }) => ({
+    tags: m.tags?.map((mt: { tag: { name: string; slug: string; group: { name: string } } }) => ({
       name: mt.tag.name,
+      slug: slugifyTagName(mt.tag.name),
       group: mt.tag.group.name,
     })) ?? [],
   };
@@ -178,8 +185,9 @@ export async function GET(request: NextRequest) {
     const isDev = process.env.NODE_ENV === 'development';
     if (isDev) console.time(`/api/movies genre=${genre}`);
 
+    const normalizedSlug = slugifyTagName(genre);
     const tag = await prisma.tag.findFirst({
-      where: { slug: genre, group: { name: 'Thể loại' } },
+      where: { group: { name: 'Thể loại' }, slug: normalizedSlug },
     });
 
     if (!tag) {
@@ -206,7 +214,44 @@ export async function GET(request: NextRequest) {
       console.log(`  genre='${tag.name}' (${genre}) total:`, total);
     }
 
-    return Response.json({ movies: formatted, genre: { name: tag.name, slug: tag.slug }, total, page, limit });
+    return Response.json({ movies: formatted, genre: { name: tag.name, slug: tag.slug }, total, page, limit, hasMore: skip + limit < total });
+  }
+
+  // ---- Country / Tag filter ----
+  const country = searchParams.get('country');
+  if (country) {
+    const isDev = process.env.NODE_ENV === 'development';
+    if (isDev) console.time(`/api/movies country=${country}`);
+
+    const tag = await prisma.tag.findFirst({
+      where: { group: { name: 'Quốc gia' }, slug: country },
+    });
+
+    if (!tag) {
+      return Response.json({ error: `Country '${country}' not found` }, { status: 404 });
+    }
+
+    const [movies, total] = await Promise.all([
+      prisma.movie.findMany({
+        where: { tags: { some: { tagId: tag.id } } },
+        select: LIST_MOVIE_SELECT,
+        orderBy: { updatedAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      prisma.movie.count({
+        where: { tags: { some: { tagId: tag.id } } },
+      }),
+    ]);
+
+    const formatted = movies.map((m) => formatListMovie(m));
+
+    if (isDev) {
+      console.timeEnd(`/api/movies country=${country}`);
+      console.log(`  country='${tag.name}' (${country}) total:`, total);
+    }
+
+    return Response.json({ movies: formatted, country: { name: tag.name, slug: tag.slug }, total, page, limit, hasMore: skip + limit < total });
   }
 
   // ---- Collection mode ----
@@ -251,7 +296,7 @@ export async function GET(request: NextRequest) {
     const paged = movies.slice(skip, skip + limit);
     const formatted = paged.map((m) => formatMovie(m));
 
-    return Response.json({ movies: formatted, total, page, limit });
+    return Response.json({ movies: formatted, total, page, limit, hasMore: skip + limit < total });
   }
 
   // ---- Search mode with DB pre-filter + lightweight scoring ----
@@ -263,7 +308,7 @@ export async function GET(request: NextRequest) {
      const queryTokens = tokenize(query);
 
      if (queryTokens.length === 0) {
-       return Response.json({ movies: [], total: 0, page, limit });
+       return Response.json({ movies: [], total: 0, page, limit, hasMore: false });
      }
 
      // DB-level filter: match normalized tokens against searchText
@@ -302,7 +347,7 @@ export async function GET(request: NextRequest) {
     const total = scored.length;
     const paged = scored.slice(skip, skip + limit);
     const formatted = paged.map((s) => formatListMovie(s.movie));
-    const json = JSON.stringify({ movies: formatted, total, page, limit });
+    const json = JSON.stringify({ movies: formatted, total, page, limit, hasMore: skip + limit < total });
 
     if (isDev) {
       console.timeEnd('/api/movies search');
@@ -337,7 +382,7 @@ export async function GET(request: NextRequest) {
       console.log(`  type=${type} total:`, total);
     }
 
-    return Response.json({ movies: formatted, total, page, limit });
+    return Response.json({ movies: formatted, total, page, limit, hasMore: skip + limit < total });
   }
 
   // ---- Sort by newest ----
@@ -363,7 +408,7 @@ export async function GET(request: NextRequest) {
       console.log('  sort=newest total:', total);
     }
 
-    return Response.json({ movies: formatted, total, page, limit });
+    return Response.json({ movies: formatted, total, page, limit, hasMore: skip + limit < total });
   }
 
   // ---- Default: all movies (paginated) ----
@@ -378,5 +423,5 @@ export async function GET(request: NextRequest) {
   ]);
 
   const formatted = movies.map((m) => formatListMovie(m));
-  return Response.json({ movies: formatted, total, page, limit });
+  return Response.json({ movies: formatted, total, page, limit, hasMore: skip + limit < total });
 }

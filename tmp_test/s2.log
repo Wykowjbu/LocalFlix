@@ -1,0 +1,38 @@
+
+> localflix@0.1.0 predev
+> if exist .next rmdir /s /q .next
+
+
+> localflix@0.1.0 dev
+> next dev
+
+▲ Next.js 16.2.6 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://192.168.110.70:3000
+- Environments: .env
+✓ Ready in 672ms
+
+Persisting failed: Unable to open static sorted file referenced from 00000005.meta
+
+Caused by:
+    0: Unable to open static sorted file 00000003.sst
+    1: Failed to open SST file D:\Users\huynp29052004\Projects\Netflix_UI\localflix\.next\dev\cache/turbopack\ee6e79b1\00000003.sst
+    2: The system cannot find the file specified. (os error 2)
+Compaction failed: Another write batch or compaction is already active (Only a single write operations is allowed at a time)
+Compaction failed: Another write batch or compaction is already active (Only a single write operations is allowed at a time)
+○ Compiling /browse ...
+ GET /browse 200 in 3.3s (next.js: 3.0s, application-code: 345ms)
+ GET /api/interactions?profileId=cmptb1v0c0h85mgh458r1qnbm 200 in 751ms (next.js: 619ms, application-code: 132ms)
+/api/tags group=the-loai: 199.239ms
+  returned: 21/24 tags with movies
+ GET /api/tags?group=the-loai 200 in 778ms (next.js: 520ms, application-code: 257ms)
+/api/tags group=quoc-gia: 189.879ms
+  returned: 24/24 tags with movies
+ GET /api/tags?group=quoc-gia 200 in 776ms (next.js: 577ms, application-code: 200ms)
+getHomeRows: 478.419ms
+/api/home-rows: 479.92ms
+ GET /api/home-rows?profileId=cmptb1v0c0h85mgh458r1qnbm 200 in 922ms (next.js: 433ms, application-code: 489ms)
+Persisting failed: Another write batch or compaction is already active (Only a single write operations is allowed at a time)
+Compaction failed: Another write batch or compaction is already active (Only a single write operations is allowed at a time)
+Persisting failed: Another write batch or compaction is already active (Only a single write operations is allowed at a time)
+Compaction failed: Another write batch or compaction is already active (Only a single write operations is allowed at a time)
