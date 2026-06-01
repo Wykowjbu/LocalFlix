@@ -52,5 +52,10 @@ export function mapDbMovie(movie: DbMovie): Movie {
     quality: movie.quality || 'HD',
     genres: movie.tags?.filter((tag) => tag.group === 'Thể loại').map((tag) => tag.name) || [],
     isNew: false,
+    progress: movie.progress ?? null,
+    watchDuration: movie.duration ?? null,
+    episodeSlug: movie.episodeSlug ?? null,
+    serverName: movie.serverName ?? null,
+    episodeLabel: movie.episodeSlug ? `Tập ${movie.episodeSlug}` : undefined,
   };
 }

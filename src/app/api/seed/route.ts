@@ -658,6 +658,12 @@ export async function POST(request: Request) {
   await runLimited([...detailQueue], DETAIL_CONCURRENCY, (slug) => syncMovieDetail(slug, stats));
   await seedFixedTags();
 
+  // Fire-and-forget: trigger Top 10 scrape after sync (non-blocking)
+  fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/seed/top10`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  }).catch(() => {});
+
   return Response.json({
     success: true,
     ...stats,

@@ -86,6 +86,16 @@ export default function MovieCard({
               <span className="-mt-1 text-[15px] tracking-[-1px]">10</span>
             </div>
           ) : null}
+          {movie.episodeLabel ? (
+            <div className="absolute left-2 bottom-2 rounded bg-black/70 px-2 py-0.5 text-[11px] text-white">
+              {movie.episodeLabel}
+            </div>
+          ) : null}
+          {movie.progress != null && movie.progress > 0 ? (
+            <div className="absolute inset-x-0 bottom-0 h-0.5 bg-white/30">
+              <div className="h-full bg-[#e50914]" style={{ width: `${movie.watchDuration ? Math.min((movie.progress / movie.watchDuration) * 100, 100) : Math.min(movie.progress / 10, 100)}%` }} />
+            </div>
+          ) : null}
         </div>
       )}
     </article>

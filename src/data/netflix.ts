@@ -23,6 +23,12 @@ export type Movie = {
   genres: string[];
   top10?: number;
   isNew?: boolean;
+  // Watch history fields
+  progress?: number | null;
+  watchDuration?: number | null;
+  episodeSlug?: string | null;
+  serverName?: string | null;
+  episodeLabel?: string;
 };
 
 export type MovieRow = {

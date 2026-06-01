@@ -11,6 +11,7 @@ export default function MovieRow({
   onExpand,
   onPreview,
   onPreviewEnd,
+  variant: variantProp,
   favoriteSlugs,
   likedSlugs,
   dislikedSlugs,
@@ -24,6 +25,7 @@ export default function MovieRow({
   onExpand: (movie: Movie) => void;
   onPreview: (movie: Movie, rect: DOMRect) => void;
   onPreviewEnd: () => void;
+  variant?: 'top10' | 'standard';
   favoriteSlugs?: Set<string>;
   likedSlugs?: Set<string>;
   dislikedSlugs?: Set<string>;
@@ -34,7 +36,7 @@ export default function MovieRow({
 }) {
   const [trackPage, setTrackPage] = useState(1);
   const [transitionEnabled, setTransitionEnabled] = useState(true);
-  const isTop10Row = title.toLowerCase().includes("top 10");
+  const isTop10Row = variantProp === 'top10' || title.toLowerCase().includes("top 10");
   const pageSize = 6;
   const pages = Array.from({ length: Math.max(1, Math.ceil(movies.length / pageSize)) }, (_, pageIndex) =>
     movies.slice(pageIndex * pageSize, pageIndex * pageSize + pageSize)

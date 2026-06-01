@@ -103,9 +103,15 @@ export default function TopNav({
       <div className="flex items-center gap-8">
         <NetflixLogo />
         <nav className="hidden items-center gap-5 text-[#e5e5e5] md:flex">
-          {["Trang chủ", "Phim truyền hình", "Phim", "Mới & Phổ biến", "Danh sách của tôi"].map((item, index) => (
-            <a key={item} href={index === 0 ? "/browse" : "#"} className={index === 0 ? "font-medium leading-[20px] text-white" : "leading-[20px] transition-colors hover:text-[#b3b3b3]"}>
-              {item}
+          {[
+            { label: "Trang chủ", href: "/browse" },
+            { label: "Phim truyền hình", href: "/tv-shows" },
+            { label: "Phim", href: "/movies" },
+            { label: "Mới & Phổ biến", href: "/new-popular" },
+            { label: "Danh sách của tôi", href: "/my-list" },
+          ].map((item, index) => (
+            <a key={item.label} href={item.href} className={index === 0 ? "font-medium leading-[20px] text-white" : "leading-[20px] transition-colors hover:text-[#b3b3b3]"}>
+              {item.label}
             </a>
           ))}
         </nav>

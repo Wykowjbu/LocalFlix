@@ -1,134 +1,232 @@
-// prisma/schema.prisma
-
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "sqlite"
-  url      = env("DATABASE_URL") // Prisma 6 hỗ trợ khai báo url trực tiếp tại đây
+  url      = env("DATABASE_URL")
 }
 
-// ------------------------------------------------------
-// QUẢN LÝ NGƯỜI DÙNG & HỒ SƠ (NETFLIX PROFILE)
-// ------------------------------------------------------
-
 model User {
-  id        String    @id @default(cuid())
-  email     String    @unique
-  password  String    // Password đã được hash
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  
-  profiles  Profile[]
+  id       String @id @default(cuid())
+  email    String @unique
+  password String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  profiles Profile[]
 }
 
 model Profile {
-  id        String    @id @default(cuid())
-  name      String    // Ví dụ: "Huy", "Kids", ...
-  avatarUrl String?   
+  id        String  @id @default(cuid())
+  name      String
+  avatarUrl String?
   userId    String
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  favorites Favorite[] 
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  favorites Favorite[]
   history   WatchHistory[]
+  reactions Reaction[]
+
+  @@index([userId])
 }
 
-// ------------------------------------------------------
-// QUẢN LÝ DỮ LIỆU PHIM (Đã tối ưu cho việc Sync Data)
-// ------------------------------------------------------
-
 model Movie {
-  id              String    @id @default(cuid())
-  slug            String    @unique 
-  name            String
-  originalName    String?
-  thumbUrl        String?
-  posterUrl       String?
-  description     String?   
-  totalEpisodes   Int?
-  currentEpisode  String?
-  time            String?
-  quality         String?
-  language        String?
-  director        String?
-  casts           String?
+  id String @id @default(cuid())
 
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  sourceId String? @unique
+  slug     String  @unique
 
-  // Quan hệ 1-N (1 Phim có nhiều Tập)
-  episodes        Episode[]
-  
-  // Quan hệ N-N (Nhiều phim thuộc nhiều Thể loại / Quốc gia)
-  categories      Category[] 
-  countries       Country[]  
+  name         String
+  originalName String?
+  thumbUrl     String?
+  posterUrl    String?
+  description  String?
 
-  // Tương tác của người dùng
-  favorites       Favorite[]
-  history         WatchHistory[]
+  totalEpisodes  Int?
+  currentEpisode String?
+  time           String?
+  quality        String?
+  language       String?
+  director       String?
+  casts          String?
+
+  sourceCreatedAt  DateTime?
+  sourceModifiedAt DateTime?
+  lastSyncedAt     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  episodes    Episode[]
+  tags        MovieTag[]
+  collections MovieCollection[]
+  favorites   Favorite[]
+  history     WatchHistory[]
+  reactions   Reaction[]
+  netflixTop10 NetflixTop10[]
+
+  @@index([slug])
+  @@index([name])
+  @@index([originalName])
+  @@index([sourceModifiedAt])
 }
 
 model Episode {
-  id          String   @id @default(cuid())
-  serverName  String   // Ví dụ: "Vietsub #1"
-  name        String   // Ví dụ: "1", "2"
-  slug        String   
-  embedUrl    String?  
-  m3u8Url     String?  
-  
-  movieId     String
-  movie       Movie    @relation(fields: [movieId], references: [slug], onDelete: Cascade) 
+  id        String @id @default(cuid())
+  movieSlug String
 
-  @@unique([movieId, serverName, slug]) // Tránh lưu trùng 1 tập của 1 server
+  serverName String
+  name       String
+  slug       String
+
+  embedUrl String?
+  m3u8Url  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  movie Movie @relation(fields: [movieSlug], references: [slug], onDelete: Cascade)
+
+  @@unique([movieSlug, serverName, slug])
+  @@index([movieSlug])
 }
 
-// ------------------------------------------------------
-// BẢNG BỔ TRỢ (LỌC THEO THỂ LOẠI & QUỐC GIA)
-// ------------------------------------------------------
+model TagGroup {
+  id   String @id @default(cuid())
+  name String @unique
 
-model Category {
-  id     String  @id @default(cuid())
-  name   String  // Ví dụ: "Hành Động"
-  slug   String  @unique // Ví dụ: "hanh-dong"
-  
-  movies Movie[]
+  tags Tag[]
 }
 
-model Country {
-  id     String  @id @default(cuid())
-  name   String  // Ví dụ: "Âu Mỹ"
-  slug   String  @unique // Ví dụ: "au-my"
-  
-  movies Movie[]
+model Tag {
+  id      String @id @default(cuid())
+  name    String
+  slug    String
+  groupId String
+
+  group  TagGroup   @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  movies MovieTag[]
+
+  @@unique([groupId, slug])
+  @@index([groupId])
 }
 
-// ------------------------------------------------------
-// TƯƠNG TÁC CỦA NGƯỜI DÙNG (MY LIST & LỊCH SỬ)
-// ------------------------------------------------------
+model MovieTag {
+  movieSlug String
+  tagId     String
+
+  movie Movie @relation(fields: [movieSlug], references: [slug], onDelete: Cascade)
+  tag   Tag   @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([movieSlug, tagId])
+}
+
+model Collection {
+  id       String  @id @default(cuid())
+  name     String
+  title    String?
+  slug     String  @unique
+  type     String?
+  endpoint String?
+
+  lastSyncedAt DateTime?
+
+  movies MovieCollection[]
+}
+
+model MovieCollection {
+  collectionId String
+  movieSlug    String
+  position     Int?
+  page         Int?
+
+  collection Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  movie      Movie      @relation(fields: [movieSlug], references: [slug], onDelete: Cascade)
+
+  @@id([collectionId, movieSlug])
+  @@index([movieSlug])
+}
 
 model Favorite {
   id        String   @id @default(cuid())
   profileId String
-  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
-  movieId   String
-  movie     Movie    @relation(fields: [movieId], references: [slug], onDelete: Cascade)
-  
+  movieSlug String
   createdAt DateTime @default(now())
 
-  @@unique([profileId, movieId]) 
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  movie   Movie   @relation(fields: [movieSlug], references: [slug], onDelete: Cascade)
+
+  @@unique([profileId, movieSlug])
+  @@index([profileId])
+  @@index([movieSlug])
+}
+
+model Reaction {
+  id        String   @id @default(cuid())
+  profileId String
+  movieSlug String
+  value     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  movie   Movie   @relation(fields: [movieSlug], references: [slug], onDelete: Cascade)
+
+  @@unique([profileId, movieSlug])
+  @@index([profileId])
+  @@index([movieSlug])
 }
 
 model WatchHistory {
-  id        String   @id @default(cuid())
+  id        String @id @default(cuid())
   profileId String
-  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
-  movieId   String
-  movie     Movie    @relation(fields: [movieId], references: [slug], onDelete: Cascade)
-  
-  episodeSlug String?  // Lưu lại tập đang xem dở
-  progress    Int?     // Lưu số giây đang xem
-  updatedAt   DateTime @updatedAt 
+  movieSlug String
 
-  @@unique([profileId, movieId]) 
+  episodeSlug String?
+  serverName  String?
+  progress    Int?
+  duration    Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  movie   Movie   @relation(fields: [movieSlug], references: [slug], onDelete: Cascade)
+
+  @@unique([profileId, movieSlug])
+  @@index([profileId])
+  @@index([movieSlug])
+}
+
+model NetflixTop10 {
+  id              String   @id @default(cuid())
+  country         String   @default("vietnam")
+  type            String
+  weekLabel       String
+  rank            Int
+
+  netflixTitle    String
+  normalizedTitle String
+  imageUrl        String?
+  netflixUrl      String?
+  netflixId       String?
+
+  matchedMovieSlug String?
+  matchStatus      String  @default("pending")
+  matchScore       Float?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  matchedMovie Movie? @relation(fields: [matchedMovieSlug], references: [slug])
+
+  @@unique([country, type, weekLabel, rank])
+  @@index([country, type, weekLabel])
+  @@index([matchedMovieSlug])
 }

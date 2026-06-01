@@ -1,29 +1,6 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
-
-// ============================================================
-// Vietnamese accent removal + normalization for search
-// ============================================================
-
-function removeVietnameseAccents(str: string): string {
-  return str
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/đ/g, 'd')
-    .replace(/Đ/g, 'D');
-}
-
-function normalizeForSearch(str: string): string {
-  return removeVietnameseAccents(str)
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function tokenize(str: string): string[] {
-  return normalizeForSearch(str).split(' ').filter(Boolean);
-}
+import { normalizeForSearch, tokenize, scoreMovie } from '@/lib/search-scoring';
 
 // ============================================================
 // Shared movie formatter
@@ -216,9 +193,7 @@ export async function GET(request: NextRequest) {
       return Response.json({ movies: [], total: 0, page, limit });
     }
 
-    // Normalize in application code so "Bố Già", "bo gia", "Gia Bo", actors and genres all match.
     const candidates = await prisma.movie.findMany({
-      orderBy: [{ lastSyncedAt: 'desc' }, { sourceModifiedAt: 'desc' }],
       include: {
         episodes: { select: { id: true } },
         tags: {
@@ -229,45 +204,13 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    // Score and filter with normalized matching
     type ScoredMovie = { movie: typeof candidates[number]; score: number };
     const scored: ScoredMovie[] = [];
 
     for (const m of candidates) {
-      const searchableFields = [
-        m.name,
-        m.originalName,
-        m.slug,
-        m.description,
-        m.director,
-        m.casts,
-        m.language,
-        m.quality,
-        ...m.tags.map((mt) => mt.tag.name),
-        ...m.tags.map((mt) => mt.tag.group.name),
-      ]
-        .filter(Boolean)
-        .join(' ');
-
-      const normalizedFields = normalizeForSearch(searchableFields);
-
-      // Check if all query tokens match
-      const allTokensMatch = queryTokens.every((token) => normalizedFields.includes(token));
-
-      if (!allTokensMatch) {
-        // Try partial: at least half tokens
-        const matchCount = queryTokens.filter((token) => normalizedFields.includes(token)).length;
-        if (matchCount < Math.ceil(queryTokens.length / 2)) continue;
-
-        scored.push({ movie: m, score: matchCount });
-        continue;
-      }
-
-      // Exact normalized phrase match is best
-      if (normalizedFields.includes(normalizedQuery)) {
-        scored.push({ movie: m, score: 1000 });
-      } else {
-        scored.push({ movie: m, score: 100 });
+      const score = scoreMovie(m, normalizedQuery, queryTokens);
+      if (score > 0) {
+        scored.push({ movie: m, score });
       }
     }
 
@@ -277,6 +220,51 @@ export async function GET(request: NextRequest) {
     const paged = scored.slice(skip, skip + limit);
     const formatted = paged.map((s) => formatMovie(s.movie));
 
+    return Response.json({ movies: formatted, total, page, limit });
+  }
+
+  // ---- Filter by type (phim-le / phim-bo) ----
+  const type = searchParams.get('type');
+  if (type === 'phim-le' || type === 'phim-bo') {
+    const isSeries = type === 'phim-bo';
+    const movies = await prisma.movie.findMany({
+      where: {
+        totalEpisodes: isSeries ? { gt: 1 } : { lte: 1 },
+      },
+      include: {
+        episodes: { select: { id: true } },
+        tags: { include: { tag: { include: { group: true } } } },
+      },
+      orderBy: { updatedAt: 'desc' },
+      skip,
+      take: limit,
+    });
+
+    const total = await prisma.movie.count({
+      where: {
+        totalEpisodes: isSeries ? { gt: 1 } : { lte: 1 },
+      },
+    });
+
+    const formatted = movies.map((m) => formatMovie(m));
+    return Response.json({ movies: formatted, total, page, limit });
+  }
+
+  // ---- Sort by newest ----
+  const sort = searchParams.get('sort');
+  if (sort === 'newest') {
+    const movies = await prisma.movie.findMany({
+      orderBy: { updatedAt: 'desc' },
+      include: {
+        episodes: { select: { id: true } },
+        tags: { include: { tag: { include: { group: true } } } },
+      },
+      skip,
+      take: limit,
+    });
+
+    const total = await prisma.movie.count();
+    const formatted = movies.map((m) => formatMovie(m));
     return Response.json({ movies: formatted, total, page, limit });
   }
 

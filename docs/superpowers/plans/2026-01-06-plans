@@ -1,0 +1,463 @@
+# Localflix Enhancements - Implementation Plan (FINAL)
+
+> **Date:** 2026-06-01 | **Status:** APPROVED - Ready for execution
+> **Spec:** `docs/superpowers/specs/2026-06-01-localflix-enhancements-design.md`
+
+---
+
+## Decisions Log
+
+| # | Question | Decision |
+|---|----------|----------|
+| 1 | Scraping approach | TUDUM JSON/direct truoc -> FlixPatrol fallback -> Puppeteer cuoi cung |
+| 2 | "Moi va Pho bien" page | Tao rieng |
+| 3 | Thu tu phases | 1->2->3->4->5->6 (giu nguyen) |
+| 4 | Top 10 storage | Bang rieng `NetflixTop10` (KHONG luu trong Movie) |
+| 5 | TV/Movies shared component | Dung chung `BrowseByType` |
+
+---
+
+## Danh gia tinh kha thi
+
+| # | Feature | OK | Phuc tap | Ghi chu |
+|---|---------|:--:|:--------:|---------|
+| 1 | Netflix Top 10 Scraper | Yes | Cao | 3-tier fallback strategy |
+| 2 | Search Scoring | Yes | Thap | Nang cap scoring hien co |
+| 3 | Watch History + Next Episode | Yes | Thap | 90% logic da co |
+| 4 | TV/Movie/New-Popular Pages | Yes | Thap | Re-use component |
+| 5 | Dynamic Home Rows | Yes | Cao | Can API + recommendation |
+| 6 | My List Page | Yes | Thap | Da co API |
+
+---
+
+## Hien trang Code
+
+### Da co (DB thuc te)
+- **Models:** Movie, Episode, Favorite, Reaction, WatchHistory, Tag, TagGroup, MovieTag, Collection, MovieCollection
+- **Seed API** sync ~32K phim, **Interactions API** (Fav/Reaction/History), **Search API** viet-accent-normalized
+- **Watch page** HLS + progress save, **Browse** co Continue Watching + My List + collections
+- **TopNav** co links (hien `href="#"`)
+
+### Can them/sua
+- Chua co bang `NetflixTop10`
+- Search scoring don gian, chua co Next Episode, chua co dedicated pages
+- Home rows chua dynamic, chua co scraper
+- File `schema.prisma` dang outdated so voi DB thuc te
+
+---
+
+## Ket qua nghien cuu scraping Netflix TUDUM
+
+### Phat hien
+
+| URL | Ket qua |
+|-----|---------|
+| `netflix.com/tudum/top10/vietnam` | HTML khong chua movie titles - chi co `#N in Movies` + watch URLs |
+| `top10.netflix.com/` | Tuong tu - co views count nhung khong co ten phim |
+| Ca 2 trang | Co Netflix watch IDs, week labels, rank numbers, image URLs (trong CSS) |
+
+### Scraping Strategy (3-tier fallback - DA CHOT)
+
+```
+Priority 1: TUDUM Direct/JSON
+  -> Tim `__NEXT_DATA__` JSON trong page source
+  -> Hoac tim hidden API endpoint ma TUDUM goi (Network tab)
+  -> Uu: Nhe, nhanh, khong can install gi
+  -> Nhuoc: Co the thay doi bat cu luc nao
+
+Priority 2: FlixPatrol.com
+  -> Scrape tu flixpatrol.com/top10/netflix/vietnam
+  -> Du lieu structured hon TUDUM
+  -> Uu: Du lieu ro rang, co ten phim
+  -> Nhuoc: Ben thu 3, co the block
+
+Priority 3: Puppeteer (last resort)
+  -> Headless Chrome render TUDUM page
+  -> Parse DOM sau khi JS render xong
+  -> Uu: Chac chan parse duoc moi thu
+  -> Nhuoc: Can install Chromium (~200MB), cham
+```
+
+---
+
+## 6 Phases
+
+---
+
+### Phase 1: Schema Sync + My List Page
+**Effort:** ~30 phut | **Risk:** Thap | **Dependencies:** None
+
+| Task | File | Mo ta |
+|------|------|-------|
+| 1.1 | `prisma/schema.prisma` | Sync voi DB thuc te (them cac model con thieu: Tag, TagGroup, MovieTag, Collection, MovieCollection, Reaction + cac fields: sourceId, sourceModifiedAt, lastSyncedAt, serverName, duration) |
+| 1.2 | Terminal | `npx prisma generate` (khong can migrate vi DB da co) |
+| 1.3 | `src/app/my-list/page.tsx` | Server component, Suspense wrapper |
+| 1.4 | `src/app/my-list/my-list-client.tsx` | Client component: fetch `/api/movies?favorites=true`, hien thi grid. Re-use pattern tu `search-client.tsx` |
+| 1.5 | `src/components/top-nav.tsx` | "Danh sach cua toi" -> `/my-list` |
+
+**Acceptance criteria:**
+- Schema file khop voi DB thuc te
+- Trang `/my-list` hien thi danh sach phim da yeu thich
+- Click phim -> mo DetailModal
+- Trang rong hien thi message "Chua co phim nao trong danh sach"
+
+---
+
+### Phase 2: TV Shows, Movies, va "Moi & Pho bien" Pages
+**Effort:** ~1 gio | **Risk:** Thap | **Dependencies:** Phase 1 (schema sync)
+
+| Task | File | Mo ta |
+|------|------|-------|
+| 2.1 | `src/app/api/movies/route.ts` | Them query param `?type=phim-bo` / `?type=phim-le` / `?sort=newest` |
+| 2.2 | `src/components/browse-by-type.tsx` | Shared component nhan prop `type` va `title`, hien thi hero + rows |
+| 2.3 | `src/app/tv-shows/page.tsx` + `tv-shows-client.tsx` | Phim bo: `totalEpisodes > 1` hoac tag slug `phim-bo` |
+| 2.4 | `src/app/movies/page.tsx` + `movies-client.tsx` | Phim le: `totalEpisodes <= 1` hoac tag slug `phim-le` |
+| 2.5 | `src/app/new-popular/page.tsx` + `new-popular-client.tsx` | Phim moi cap nhat (`sort=newest`) + phim co nhieu tuong tac |
+| 2.6 | `src/components/top-nav.tsx` | Links: `/tv-shows`, `/movies`, `/new-popular` |
+
+**Filter logic:**
+- Phim bo: `WHERE totalEpisodes > 1` HOAC co Tag slug = `phim-bo`
+- Phim le: `WHERE totalEpisodes <= 1` HOAC co Tag slug = `phim-le`
+- Moi va Pho bien: `ORDER BY updatedAt DESC` + section "Thinh hanh" (nhieu Favorite/Reaction gan day)
+
+**Acceptance criteria:**
+- 3 trang moi hoat dong dung
+- Nav links deu active
+- Moi trang co hero section + rows phu hop
+
+---
+
+### Phase 3: Search Scoring Optimization
+**Effort:** ~1 gio | **Risk:** Thap | **Dependencies:** None
+
+| Task | File | Mo ta |
+|------|------|-------|
+| 3.1 | `src/lib/search-scoring.ts` | Module scoring rieng, export `scoreMovie()` va `normalizeForSearch()` |
+| 3.2 | `src/app/api/movies/route.ts` | Thay the scoring cu bang module moi |
+
+**Bang diem chi tiet:**
+
+| Dieu kien | Diem | Vi du |
+|-----------|------|-------|
+| Ten chinh xac (normalized) | +100 | query "bo gia" -> movie "Bo Gia" |
+| Slug khop query | +95 | query "bo-gia" -> slug "bo-gia" |
+| Ten bat dau bang query | +70 | query "bo" -> "Bo Gia" |
+| Original name khop | +60 | query "parasite" -> originalName "Parasite" |
+| Original name bat dau | +55 | query "para" -> "Parasite" |
+| Chua nguyen cum tu | +50 | query "cuoc doi" -> "Cuoc Doi Tuoi Dep" |
+| Original name chua cum tu | +45 | query "dark" -> "The Dark Knight" |
+| Tu don le match | +10/tu | query "hanh dong" -> "Hanh" +10, "Dong" +10 |
+| Match trong fields phu (cast, genre, director) | +20 | query "Tom Hanks" -> casts field |
+| Partial match fields phu | +3/tu | |
+| Netflix Top 10 VN bonus | +10 | Phim dang trong Top 10 |
+
+**Implementation:**
+```typescript
+export function scoreMovie(movie, normalizedQuery, queryTokens): number
+export function normalizeForSearch(str: string): string
+export function tokenize(str: string): string[]
+```
+
+**Acceptance criteria:**
+- Tim "bo gia" -> Bo Gia xuat hien dau tien
+- Tim "parasite" -> Ky Sinh Trung (original name match) xuat hien cao
+- Tim "Tom Hanks" -> Tat ca phim co Tom Hanks
+
+---
+
+### Phase 4: Netflix Top 10 Scraper
+**Effort:** ~3 gio | **Risk:** Cao | **Dependencies:** Phase 1 (schema)
+
+#### 4.1 - Schema: bang `NetflixTop10`
+
+```prisma
+model NetflixTop10 {
+  id              String   @id @default(cuid())
+  country         String   @default("vietnam")
+  type            String                          // "movie" | "tv"
+  weekLabel       String                          // "2026-W22" (ISO week)
+  rank            Int                             // 1..10
+
+  // Du lieu tu Netflix
+  netflixTitle    String
+  normalizedTitle String
+  imageUrl        String?
+  netflixUrl      String?
+  netflixId       String?
+
+  // Matching voi DB noi bo
+  matchedMovieSlug String?
+  matchStatus      String  @default("pending")    // "matched" | "pending" | "not_found"
+  matchScore       Float?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  matchedMovie    Movie?   @relation(fields: [matchedMovieSlug], references: [slug])
+
+  @@unique([country, type, weekLabel, rank])
+  @@index([country, type, weekLabel])
+  @@index([matchedMovieSlug])
+}
+
+// Movie model them:
+// netflixTop10  NetflixTop10[]
+```
+
+#### 4.2 - Tai sao bang rieng?
+
+| Van de | Field trong Movie | Bang rieng |
+|--------|:-----------------:|:----------:|
+| Lich su theo tuan | Mat | Giu duoc |
+| Phim Netflix chua co trong DB | Khong luu duoc | matchedMovieSlug = null |
+| Phim rot Top 10 | Phai reset field | Tuan moi = row moi |
+| Query lich su rank | Khong duoc | WHERE weekLabel = ... |
+
+#### 4.3 - Luong cap nhat
+
+```
+Cron thu 2 / Manual trigger
+  |
+  v
+POST /api/seed/top10
+  |
+  v
+[Thu Priority 1: TUDUM JSON]
+  |-- Thanh cong --> Parse title/rank/image/url
+  |-- That bai ---|
+                  v
+[Thu Priority 2: FlixPatrol]
+  |-- Thanh cong --> Parse title/rank
+  |-- That bai ---|
+                  v
+[Thu Priority 3: Puppeteer]
+  |-- Thanh cong --> Parse title/rank/image/url
+  |-- That bai --> Log error, return
+  |
+  v
+Luu vao NetflixTop10 theo weekLabel
+  |
+  v
+Normalize title
+  |
+  v
+Fuzzy match voi Movie trong DB (string-similarity > 0.8)
+  |
+  +-- Score > 0.8 --> matchStatus = "matched"
+  +-- 0.5 < Score < 0.8 --> matchStatus = "pending"
+  +-- Score < 0.5 --> matchStatus = "not_found"
+```
+
+#### 4.4 - API endpoints
+
+| Endpoint | Method | Mo ta |
+|----------|--------|-------|
+| `POST /api/seed/top10` | POST | Scrape + luu + auto-match. Query: `?source=tudum\|flixpatrol\|puppeteer` (optional force source) |
+| `GET /api/top10` | GET | Lay Top 10 tuan hien tai. Query: `?week=2026-W22&type=movie&country=vietnam` |
+| `POST /api/top10/rematch` | POST | Re-match cac entry pending/not_found (chay sau khi seed phim moi) |
+
+#### 4.5 - Hien thi card Top 10
+
+```
+Neu matchedMovieSlug co gia tri:
+    -> Card phim tu DB (poster, ten VN, click de xem trong app)
+    -> So rank lon ben trai (kieu Netflix)
+
+Neu matchedMovieSlug = null:
+    -> Card voi imageUrl tu Netflix (hoac placeholder)
+    -> Ten Netflix goc (netflixTitle)
+    -> Badge "Chua co tren Localflix"
+    -> Click -> mo netflixUrl (external link) hoac disabled
+```
+
+#### 4.6 - Dependencies
+
+| Package | Muc dich | Khi nao install |
+|---------|----------|-----------------|
+| `string-similarity` | Fuzzy matching title | Luon can |
+| `puppeteer` | Fallback cuoi cung | Chi khi Priority 1+2 fail |
+
+**Acceptance criteria:**
+- POST `/api/seed/top10` luu duoc 10 movies + 10 TV shows cho tuan hien tai
+- GET `/api/top10` tra ve dung data
+- Phim da co trong DB duoc auto-match
+- Phim chua co hien thi voi matchStatus = "pending" hoac "not_found"
+
+---
+
+### Phase 5: Watch History - "Next Episode"
+**Effort:** ~1 gio | **Risk:** Thap | **Dependencies:** None
+
+| Task | File | Mo ta |
+|------|------|-------|
+| 5.1 | `src/app/api/interactions/next-episode/route.ts` | GET `?profileId=...&movieSlug=...` -> tra ve next episode info |
+| 5.2 | `src/app/watch/[slug]/page.tsx` | Khi video gan het -> hien thi overlay "Tap tiep theo" voi countdown |
+| 5.3 | `src/components/browse.tsx` | Tren card Continue Watching: hien thi "Tap X" va progress bar |
+
+**Next Episode Logic:**
+```
+Input: movieSlug, episodeSlug (hien tai), serverName
+  |
+  v
+Lay tat ca episodes cua movie theo serverName
+  |
+  v
+Sort theo so (parseInt(episode.name) hoac parseInt(episode.slug))
+  |
+  v
+Tim index cua episodeSlug hien tai
+  |
+  v
+Return episodes[index + 1] hoac null neu het
+```
+
+**Acceptance criteria:**
+- Dang xem tap 3 -> hien thi "Xem tap 4" khi video gan ket thuc
+- Continue Watching row hien thi ten tap dang xem do
+- Phim 1 tap (phim le) -> khong hien thi next episode
+
+---
+
+### Phase 6: Dynamic Home Page Rows
+**Effort:** ~3-4 gio | **Risk:** Trung binh | **Dependencies:** Phase 1, 4 (NetflixTop10 data)
+
+| Task | File | Mo ta |
+|------|------|-------|
+| 6.1 | `src/app/api/home-rows/route.ts` | Tra ve danh sach rows dong |
+| 6.2 | `src/lib/recommendation.ts` | Thuat toan goi y dua tren interactions |
+| 6.3 | `src/components/browse.tsx` | Refactor: dung `/api/home-rows` thay vi fetch rieng le |
+| 6.4 | `src/components/movie-row.tsx` | Them variant Top 10 voi so rank lon ben trai poster |
+
+**8 loai rows:**
+
+| # | Row Title | Nguon | Logic |
+|---|-----------|-------|-------|
+| 1 | Tiep tuc xem | WatchHistory | Phim co progress > 0, ORDER BY updatedAt DESC |
+| 2 | Top 10 Phim tai VN | NetflixTop10 | WHERE type='movie' AND weekLabel = current week, LEFT JOIN Movie |
+| 3 | Top 10 TV tai VN | NetflixTop10 | WHERE type='tv' AND weekLabel = current week, LEFT JOIN Movie |
+| 4 | Vi ban da xem [X] | WatchHistory + MovieTag | Last watched movie -> tim phim cung Category/Country |
+| 5 | Phim [The loai] danh cho ban | Reaction + Favorite + Tag | The loai user Like/Fav nhieu nhat |
+| 6 | Phim moi cap nhat | Movie.updatedAt | ORDER BY updatedAt DESC LIMIT 20 |
+| 7 | Phim bo co the ban thich | WatchHistory + totalEpisodes | Series tu lich su xem phim bo |
+| 8 | Danh sach cua ban | Favorite | Preview nhanh My List (max 20) |
+
+**Recommendation Engine:**
+```
+Input: profileId
+  |
+  v
+1. Lay interactions: history, likes (Reaction.value='like'), favorites
+  |
+  v
+2. Dem tag frequency tu liked + favorited movies
+   -> topGenre = the loai xuat hien nhieu nhat
+   -> topCountry = quoc gia xuat hien nhieu nhat
+  |
+  v
+3. Build rows:
+   - "Vi ban da xem [X]": lay phim cuoi cung tu history -> tim phim cung tags
+   - "Phim [topGenre]": query movies co tag = topGenre, loai tru da xem
+   - Cac row khac: query tuong ung
+  |
+  v
+4. Loc: bo phim trung lap giua cac rows
+  |
+  v
+5. Return: [{title, movies, variant?}]
+```
+
+**Top 10 row query (Prisma):**
+```typescript
+const top10Movies = await prisma.netflixTop10.findMany({
+  where: {
+    country: 'vietnam',
+    weekLabel: getCurrentISOWeek(),
+    type: 'movie',
+  },
+  orderBy: { rank: 'asc' },
+  include: {
+    matchedMovie: {
+      include: { tags: { include: { tag: { include: { group: true } } } } }
+    }
+  }
+});
+```
+
+**Acceptance criteria:**
+- Trang chu hien thi rows dong dua tren interaction cua user
+- User moi (chua co interaction) -> hien thi rows mac dinh (Moi cap nhat, Top 10, collections)
+- Top 10 row hien thi so rank lon ben trai poster
+- Phim chua match trong Top 10 hien thi card "Chua co tren Localflix"
+
+---
+
+## Tong hop Files
+
+### Tao moi (14 files)
+
+| File | Phase |
+|------|:-----:|
+| `src/app/my-list/page.tsx` | 1 |
+| `src/app/my-list/my-list-client.tsx` | 1 |
+| `src/components/browse-by-type.tsx` | 2 |
+| `src/app/tv-shows/page.tsx` + `tv-shows-client.tsx` | 2 |
+| `src/app/movies/page.tsx` + `movies-client.tsx` | 2 |
+| `src/app/new-popular/page.tsx` + `new-popular-client.tsx` | 2 |
+| `src/lib/search-scoring.ts` | 3 |
+| `src/app/api/seed/top10/route.ts` | 4 |
+| `src/app/api/top10/route.ts` | 4 |
+| `src/app/api/interactions/next-episode/route.ts` | 5 |
+| `src/app/api/home-rows/route.ts` | 6 |
+| `src/lib/recommendation.ts` | 6 |
+
+### Sua (8 files)
+
+| File | Phase | Thay doi |
+|------|:-----:|---------|
+| `prisma/schema.prisma` | 1, 4 | Sync DB + them NetflixTop10 |
+| `src/components/top-nav.tsx` | 1, 2 | Nav links: /my-list, /tv-shows, /movies, /new-popular |
+| `src/app/api/movies/route.ts` | 2, 3 | Filter type + scoring moi |
+| `src/lib/movie-format.ts` | 4 | Khong can them top10RankVN nua |
+| `src/app/api/seed/route.ts` | 4 | Goi top10 scraper sau sync |
+| `src/app/watch/[slug]/page.tsx` | 5 | Next episode overlay UI |
+| `src/components/browse.tsx` | 5, 6 | Continue Watching info + dynamic rows |
+| `src/components/movie-row.tsx` | 6 | Top 10 rank number UI |
+
+### Dependencies moi
+
+| Package | Phase | Bat buoc |
+|---------|:-----:|:--------:|
+| `string-similarity` | 4 | Yes |
+| `puppeteer` | 4 | Chi khi fallback |
+
+---
+
+## Timeline: ~10-12 gio (chia 3 sessions)
+
+### Session 1: Foundation (~2.5 gio)
+| Phase | Thoi gian |
+|-------|-----------|
+| Phase 1: Schema + My List | ~30 phut |
+| Phase 2: TV/Movies/New-Popular | ~1 gio |
+| Phase 3: Search Scoring | ~1 gio |
+
+### Session 2: Top 10 (~3 gio)
+| Phase | Thoi gian |
+|-------|-----------|
+| Phase 4: Netflix Top 10 Scraper | ~3 gio |
+
+### Session 3: Intelligence (~4-5 gio)
+| Phase | Thoi gian |
+|-------|-----------|
+| Phase 5: Next Episode | ~1 gio |
+| Phase 6: Dynamic Home Rows | ~3-4 gio |
+
+---
+
+## Luu y quan trong
+
+1. **Schema sync truoc het** - File schema.prisma hien tai thieu nhieu models. PHAI sync truoc khi lam bat cu gi.
+2. **Khong sua Movie model cho Top 10** - Top 10 la du lieu theo tuan, luu trong bang rieng.
+3. **Scraping co the fail** - Luon co fallback. Neu ca 3 source deu fail, log error va skip (khong crash app).
+4. **Test tung phase** - Moi phase xong phai test truoc khi chuyen phase tiep.
+5. **Prisma generate** - Can tat dev server truoc khi chay `npx prisma generate` (Windows lock file).

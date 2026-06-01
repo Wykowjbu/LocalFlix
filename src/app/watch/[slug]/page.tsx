@@ -87,6 +87,24 @@ function WatchPlayer({ movieSlug }: { movieSlug: string }) {
   const [error, setError] = useState("");
   const [resumeProgress, setResumeProgress] = useState<number | null>(null);
   const [playbackMode, setPlaybackMode] = useState<'hls' | 'embed'>('hls');
+  const [nextEpisode, setNextEpisode] = useState<EpisodeItem | null>(null);
+  const [showNextOverlay, setShowNextOverlay] = useState(false);
+  const nextCountdownRef = useRef<number | null>(null);
+  const [nextCountdown, setNextCountdown] = useState(10);
+
+  const fetchNextEpisode = useCallback(async (currentEpisodeSlug: string, currentServerName: string) => {
+    try {
+      const res = await fetch(`/api/interactions/next-episode?movieSlug=${movieSlug}&episodeSlug=${currentEpisodeSlug}&serverName=${encodeURIComponent(currentServerName)}`);
+      const data = await res.json();
+      if (data.hasNext && data.nextEpisode) {
+        setNextEpisode(data.nextEpisode);
+      } else {
+        setNextEpisode(null);
+      }
+    } catch {
+      setNextEpisode(null);
+    }
+  }, [movieSlug]);
 
   // Fetch movie data from DB
   useEffect(() => {
@@ -303,7 +321,16 @@ function WatchPlayer({ movieSlug }: { movieSlug: string }) {
 
     const onPlay = () => { setIsPlaying(true); revealControls(); };
     const onPause = () => { setIsPlaying(false); revealControls(); saveProgress(); };
-    const onTimeUpdate = () => setCurrentTime(video.currentTime);
+    const onTimeUpdate = () => {
+      setCurrentTime(video.currentTime);
+      // Check if near end (>90% progress or last 30 seconds) and has next episode
+      if (activeEpisode && video.duration > 0) {
+        const remaining = video.duration - video.currentTime;
+        if ((remaining <= 30 || video.currentTime / video.duration >= 0.9) && !showNextOverlay && !nextEpisode) {
+          fetchNextEpisode(activeEpisode.slug, activeEpisode.serverName);
+        }
+      }
+    };
     const onLoadedMetadata = () => {
       setDuration(video.duration || 0);
       if (resumeProgress) {
@@ -312,12 +339,25 @@ function WatchPlayer({ movieSlug }: { movieSlug: string }) {
       }
     };
     const onDurationChange = () => setDuration(video.duration || 0);
+    const onEnded = () => {
+      if (nextEpisode) {
+        const nextSlug = nextEpisode.slug;
+        setEpisodeIndex((prev) => {
+          const newIndex = episodes.findIndex((ep) => ep.slug === nextSlug);
+          return newIndex >= 0 ? newIndex : prev;
+        });
+        setShowNextOverlay(false);
+        setNextEpisode(null);
+        setNextCountdown(10);
+      }
+    };
 
     video.addEventListener("play", onPlay);
     video.addEventListener("pause", onPause);
     video.addEventListener("timeupdate", onTimeUpdate);
     video.addEventListener("loadedmetadata", onLoadedMetadata);
     video.addEventListener("durationchange", onDurationChange);
+    video.addEventListener("ended", onEnded);
 
     return () => {
       video.removeEventListener("play", onPlay);
@@ -325,8 +365,9 @@ function WatchPlayer({ movieSlug }: { movieSlug: string }) {
       video.removeEventListener("timeupdate", onTimeUpdate);
       video.removeEventListener("loadedmetadata", onLoadedMetadata);
       video.removeEventListener("durationchange", onDurationChange);
+      video.removeEventListener("ended", onEnded);
     };
-  }, [muted, speed, volume, saveProgress, resumeProgress]);
+  }, [muted, speed, volume, saveProgress, resumeProgress, activeEpisode, fetchNextEpisode, showNextOverlay, nextEpisode, episodes]);
 
   // Periodic progress save every 10 seconds
   useEffect(() => {
@@ -345,6 +386,29 @@ function WatchPlayer({ movieSlug }: { movieSlug: string }) {
     hideControlsTimer.current = window.setTimeout(() => setShowControls(false), 3000);
     return () => { if (hideControlsTimer.current) window.clearTimeout(hideControlsTimer.current); };
   }, []);
+
+  // Show next episode overlay and start countdown when nextEpisode is set
+  useEffect(() => {
+    if (!nextEpisode) return;
+    const timer = window.setTimeout(() => setShowNextOverlay(true), 3000);
+    return () => window.clearTimeout(timer);
+  }, [nextEpisode]);
+
+  // Countdown for auto-play
+  useEffect(() => {
+    if (!showNextOverlay || !nextEpisode) return;
+    if (nextCountdown <= 0) {
+      setEpisodeIndex(episodes.findIndex((ep) => ep.slug === nextEpisode.slug));
+      setShowNextOverlay(false);
+      setNextEpisode(null);
+      setNextCountdown(10);
+      return;
+    }
+    nextCountdownRef.current = window.setTimeout(() => {
+      setNextCountdown((v) => v - 1);
+    }, 1000);
+    return () => { if (nextCountdownRef.current) window.clearTimeout(nextCountdownRef.current); };
+  }, [showNextOverlay, nextEpisode, nextCountdown, episodes]);
 
   if (loading) {
     return (
@@ -520,6 +584,44 @@ function WatchPlayer({ movieSlug }: { movieSlug: string }) {
           </div>
         </div>
       </section>
+      ) : null}
+
+      {nextEpisode && showNextOverlay && playbackMode !== 'embed' ? (
+        <div className="absolute bottom-28 right-8 z-40 w-72 rounded-lg bg-[#181818]/95 p-4 shadow-[0_8px_30px_rgba(0,0,0,.45)] backdrop-blur">
+          <p className="text-[13px] text-[#b3b3b3]">Tiếp theo</p>
+          <p className="mt-1 text-[15px] font-medium text-white">Tập {nextEpisode.name}</p>
+          <div className="mt-3 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setEpisodeIndex(episodes.findIndex((ep) => ep.slug === nextEpisode.slug));
+                setShowNextOverlay(false);
+                setNextEpisode(null);
+                setNextCountdown(10);
+              }}
+              className="cursor-pointer rounded bg-white px-4 py-1.5 text-[13px] font-bold text-black transition hover:bg-[#c2c2c2]"
+            >
+              Xem tập tiếp
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setShowNextOverlay(false);
+                setNextEpisode(null);
+                setNextCountdown(10);
+              }}
+              className="cursor-pointer rounded bg-white/10 px-4 py-1.5 text-[13px] text-white transition hover:bg-white/20"
+            >
+              Bỏ qua
+            </button>
+          </div>
+          <div className="mt-2 h-0.5 w-full rounded-full bg-white/20">
+            <div
+              className="h-full rounded-full bg-[#e50914] transition-all duration-1000"
+              style={{ width: `${(nextCountdown / 10) * 100}%` }}
+            />
+          </div>
+        </div>
       ) : null}
     </main>
   );
