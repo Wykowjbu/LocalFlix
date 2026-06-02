@@ -104,3 +104,15 @@ getHomeRows: 479.102ms
 /api/movies search: 61.938ms
   matched: 0 | response size: 59 bytes
  GET /api/movies?q=Bae%20Suzy&limit=60&page=1 200 in 73ms (next.js: 3ms, application-code: 69ms)
+ GET /country/han-quoc 200 in 1353ms (next.js: 1044ms, application-code: 309ms)
+/api/tags group=the-loai: 98.621ms
+  returned: 21/24 tags with movies
+ GET /api/tags?group=the-loai 200 in 167ms (next.js: 23ms, application-code: 144ms)
+/api/tags group=quoc-gia: 89.876ms
+  returned: 24/24 tags with movies
+ GET /api/tags?group=quoc-gia 200 in 169ms (next.js: 71ms, application-code: 98ms)
+ GET /api/interactions?profileId=cmptb1v0c0h85mgh458r1qnbm 200 in 61ms (next.js: 17ms, application-code: 44ms)
+/api/movies country=han-quoc: 587.512ms
+  country='Hàn Quốc' (han-quoc) total: 38
+ GET /api/movies?country=han-quoc&limit=50&page=1 200 in 704ms (next.js: 91ms, application-code: 613ms)
+^C^C
