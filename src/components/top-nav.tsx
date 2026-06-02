@@ -33,6 +33,7 @@ export default function TopNav({
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchValue, setSearchValue] = useState("");
   const [confirmForceSync, setConfirmForceSync] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const accountCloseTimer = useRef<number | null>(null);
 
@@ -118,8 +119,11 @@ export default function TopNav({
           <TagDropdown group="the-loai" label="Thể loại" hrefPrefix="/genre" />
           <TagDropdown group="quoc-gia" label="Quốc gia" hrefPrefix="/country" />
         </nav>
-        <button className="flex items-center gap-1 text-white md:hidden">
-          Duyệt tìm <Icon name="chevron" className="h-4 w-4 rotate-90" />
+        <button
+          onClick={() => setMobileMenuOpen((v) => !v)}
+          className={`flex items-center gap-1 text-white md:hidden ${mobileMenuOpen ? "opacity-70" : ""}`}
+        >
+          Duyệt tìm <Icon name="chevron" className={`h-4 w-4 transition-transform ${mobileMenuOpen ? "-rotate-90" : "rotate-90"}`} />
         </button>
       </div>
       <div className="flex items-center gap-3">
@@ -263,6 +267,49 @@ export default function TopNav({
         </div>
       </div>
     </header>
+    {mobileMenuOpen ? (
+      <div className="fixed inset-x-0 top-[68px] z-40 md:hidden">
+        <div className="absolute inset-0 h-[calc(100vh-68px)] bg-black/60" onClick={() => setMobileMenuOpen(false)} />
+        <div className="relative max-h-[calc(100vh-68px)] overflow-y-auto border-t border-white/10 bg-[#141414] shadow-[0_8px_30px_rgba(0,0,0,.75)]">
+          <div className="space-y-1 py-2">
+            {[
+              { label: "Trang chủ", href: "/browse" },
+              { label: "Phim truyền hình", href: "/tv-shows" },
+              { label: "Phim", href: "/movies" },
+              { label: "Mới & Phổ biến", href: "/new-popular" },
+              { label: "Danh sách của tôi", href: "/my-list" },
+            ].map((item) => (
+              <a
+                key={item.label}
+                href={item.href}
+                onClick={() => setMobileMenuOpen(false)}
+                className="block px-4 py-3 text-[14px] text-[#e5e5e5] transition-colors hover:bg-white/10 hover:text-white"
+              >
+                {item.label}
+              </a>
+            ))}
+          </div>
+          <div className="border-t border-white/10">
+            <TagDropdown group="the-loai" label="Thể loại" hrefPrefix="/genre" mobileLayout />
+          </div>
+          <div className="border-t border-white/10">
+            <TagDropdown group="quoc-gia" label="Quốc gia" hrefPrefix="/country" mobileLayout />
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setConfirmForceSync(true);
+              setMobileMenuOpen(false);
+            }}
+            disabled={seeding}
+            className="flex w-full items-center gap-3 border-t border-white/10 px-4 py-3 text-[14px] text-left text-[#e5e5e5] transition-colors hover:bg-white/10 hover:text-white disabled:opacity-50"
+          >
+            <Icon name="database" className="h-5 w-5 shrink-0" />
+            Sync Full (Toàn bộ phim)
+          </button>
+        </div>
+      </div>
+    ) : null}
     {confirmForceSync ? (
       <div className="fixed inset-0 z-[100] grid place-items-center bg-black/70" onClick={() => setConfirmForceSync(false)}>
         <div

@@ -237,6 +237,10 @@ export default function Browse({ activeProfile, onProfileChange }: { activeProfi
   const heroMovie = homeRows.length > 0 ? (homeRows[0].movies[0] ?? null) : null;
   const interactionProps = { favoriteSlugs, likedSlugs, dislikedSlugs, onToggleFavorite: handleToggleFavorite, onToggleLike: handleToggleLike, onToggleDislike: handleToggleDislike, onPlay: handlePlay };
   const expandHandler = (movie: Movie) => {
+    if (previewOpenTimer.current) window.clearTimeout(previewOpenTimer.current);
+    if (previewHideTimer.current) window.clearTimeout(previewHideTimer.current);
+    if (previewRemoveTimer.current) window.clearTimeout(previewRemoveTimer.current);
+    currentActivePopup.current = null;
     if (movie.top10MatchStatus && movie.top10MatchStatus !== 'matched') {
       if (movie.top10NetflixUrl) {
         window.open(movie.top10NetflixUrl, '_blank', 'noopener');

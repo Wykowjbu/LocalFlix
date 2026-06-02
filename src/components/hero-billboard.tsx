@@ -15,13 +15,13 @@ export default function HeroBillboard({ heroMovie, onPlay, onInfo }: { heroMovie
   const heroLabel = hero ? "LOCALFLIX" : featuredMovie.label;
 
   return (
-    <section className="relative min-h-[620px] overflow-hidden md:h-[80vh]">
+    <section className="relative min-h-[480px] overflow-hidden sm:min-h-[560px] md:h-[80vh] md:min-h-[620px]">
       <div className="absolute inset-0">
         <Image src={heroImage} alt={heroTitle} fill priority sizes="100vw" className="object-cover" />
         <div className="absolute inset-0 bg-gradient-to-r from-[#141414] via-[#141414]/60 to-transparent" />
         <div className="absolute inset-x-0 bottom-0 h-56 bg-gradient-to-t from-[#141414] to-transparent" />
       </div>
-      <div className="relative z-10 flex h-full min-h-[620px] max-w-[754px] flex-col justify-end px-[4%] pb-[12vw] pt-32 md:pb-[8vw]">
+      <div className="relative z-10 flex h-full min-h-[480px] max-w-[754px] flex-col justify-end px-[4%] pb-[12vw] pt-32 sm:min-h-[560px] md:min-h-[620px] md:pb-[8vw]">
         <p className="mb-3 text-[14px] font-bold leading-[18px] tracking-[0.28em] text-[#e50914]">{heroLabel}</p>
         <h1 className="text-[clamp(42px,6vw,88px)] font-black leading-[0.95] tracking-normal text-white">{heroTitle}</h1>
         <div className="mt-5 flex flex-wrap items-center gap-2 text-[16px] leading-[24px] text-[#bcbcbc]">

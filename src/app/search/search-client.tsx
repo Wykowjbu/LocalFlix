@@ -164,6 +164,10 @@ export default function SearchClient() {
   }, [activeProfile, dislikedSlugs, likedSlugs]);
 
   const handleExpand = useCallback((movie: Movie) => {
+    if (previewOpenTimer.current) window.clearTimeout(previewOpenTimer.current);
+    if (previewHideTimer.current) window.clearTimeout(previewHideTimer.current);
+    if (previewRemoveTimer.current) window.clearTimeout(previewRemoveTimer.current);
+    currentActivePopup.current = null;
     setPreview(null);
     setDetailMovie(movie);
   }, []);

@@ -100,10 +100,10 @@ export default function DetailModal({
   const isFetching = loading && !detail;
 
   return (
-    <div className={`fixed inset-0 z-[80] overflow-y-auto bg-black/70 px-3 py-8 md:px-8 ${closing ? 'pointer-events-none' : ''}`} onMouseDown={onClose}>
+    <div className={`fixed inset-0 z-[80] overflow-y-auto overscroll-contain bg-black/70 px-0 py-4 sm:px-3 sm:py-8 md:px-8 ${closing ? 'pointer-events-none' : ''}`} onMouseDown={onClose}>
       <section
         role="dialog" aria-modal="true" aria-label={movie.title} tabIndex={-1}
-        className={`mx-auto min-h-[80vh] w-[92vw] max-w-[850px] overflow-hidden rounded-md bg-[#181818] pb-8 text-white shadow-[0_3px_10px_rgba(0,0,0,.75)] outline-none detail-modal-content ${closing ? 'exiting' : ''}`}
+        className={`mx-auto min-h-[80vh] w-full max-w-[850px] overflow-hidden rounded-md bg-[#181818] pb-8 text-white shadow-[0_3px_10px_rgba(0,0,0,.75)] outline-none detail-modal-content ${closing ? 'exiting' : ''}`}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="relative aspect-video min-h-[300px] overflow-hidden bg-[#141414]">
@@ -127,7 +127,7 @@ export default function DetailModal({
           </div>
         </div>
 
-        <div className="grid gap-8 px-[clamp(20px,4vw,48px)] py-8 md:grid-cols-[minmax(0,1fr)_250px]">
+        <div className="grid gap-8 px-4 py-6 sm:px-[clamp(20px,4vw,48px)] sm:py-8 md:grid-cols-[minmax(0,1fr)_250px]">
           {isFetching ? <DetailSkeleton /> : (
             <>
               <div>
@@ -171,7 +171,7 @@ export default function DetailModal({
         </div>
 
         {episodes.length > 0 && (
-          <section className="px-[clamp(20px,4vw,48px)]">
+          <section className="px-4 sm:px-[clamp(20px,4vw,48px)]">
             <div className="mb-4 flex items-end justify-between gap-4">
               <h3 className="text-[24px] font-bold leading-[30px]">Tập</h3>
               <span className="text-sm text-[#b3b3b3]">{movie.title}</span>
@@ -197,7 +197,7 @@ export default function DetailModal({
           </section>
         )}
 
-        <section className="mt-10 px-[clamp(20px,4vw,48px)] text-sm leading-relaxed">
+        <section className="mt-10 px-4 text-sm leading-relaxed sm:px-[clamp(20px,4vw,48px)]">
           <h3 className="mb-4 text-[24px] font-bold leading-[30px]">Giới thiệu về <strong>{movie.title}</strong></h3>
           {director && <p><span className="text-[#777777]">Đạo diễn:</span> {director}</p>}
           {casts && <p><span className="text-[#777777]">Diễn viên:</span> {casts}</p>}

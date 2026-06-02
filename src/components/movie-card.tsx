@@ -47,6 +47,7 @@ export default memo(function MovieCard({
     <article
       onMouseEnter={isUnmatchedTop10 ? undefined : (event) => onPreview(movie, event.currentTarget.getBoundingClientRect())}
       onMouseLeave={isUnmatchedTop10 ? undefined : onPreviewEnd}
+      onClick={isUnmatchedTop10 ? undefined : () => onExpand(movie)}
       className={`movie-card group/card relative shrink-0 cursor-pointer ${
         isTop10 ? "basis-[64%] sm:basis-[42%] md:basis-[31%] lg:basis-[24%] xl:basis-[20%]" : "basis-[48%] sm:basis-[31%] md:basis-[23.5%] lg:basis-[18.9%] xl:basis-[15.8%]"
       }`}

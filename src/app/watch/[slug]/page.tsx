@@ -434,7 +434,7 @@ function WatchPlayer({ movieSlug }: { movieSlug: string }) {
   return (
     <main
       ref={shellRef}
-      className={`fixed inset-0 h-screen w-screen overflow-hidden bg-black text-white ${playbackMode === 'embed' ? "cursor-default" : showControls ? "cursor-default" : "cursor-none"}`}
+      className={`fixed inset-0 h-dvh w-full overflow-hidden bg-black text-white ${playbackMode === 'embed' ? "cursor-default" : showControls ? "cursor-default" : "cursor-none"}`}
       onMouseMove={playbackMode === 'embed' ? undefined : revealControls}
     >
       {playbackMode === 'embed' && activeEpisode?.embedUrl ? (
@@ -450,7 +450,7 @@ function WatchPlayer({ movieSlug }: { movieSlug: string }) {
         </div>
       ) : null}
 
-      <header className={`absolute inset-x-0 top-0 flex h-24 items-center justify-between px-8 transition-opacity duration-300 ${playbackMode === 'embed' ? "opacity-100" : showControls ? "opacity-100" : "opacity-0"}`}>
+      <header className={`absolute inset-x-0 top-0 flex h-24 items-center justify-between px-4 transition-opacity duration-300 sm:px-8 ${playbackMode === 'embed' ? "opacity-100" : showControls ? "opacity-100" : "opacity-0"}`}>
         <button className="grid size-12 place-items-center rounded-full text-white transition hover:bg-white/10" type="button" aria-label="Quay lại" onClick={() => { saveProgress(); history.back(); }}>
           <Icon name="back" />
         </button>
@@ -461,7 +461,7 @@ function WatchPlayer({ movieSlug }: { movieSlug: string }) {
               <span className="text-[14px]">Tập phim</span>
             </button>
             {showEpisodes ? (
-              <div className="absolute right-0 top-14 w-72 overflow-hidden rounded bg-[#181818]/95 py-3 shadow-[0_8px_30px_rgba(0,0,0,.45)] z-50">
+              <div className="absolute right-0 top-14 w-[min(288px,80vw)] overflow-hidden rounded bg-[#181818]/95 py-3 shadow-[0_8px_30px_rgba(0,0,0,.45)] z-50">
                 <div className="px-4 pb-2 text-[13px] text-[#b3b3b3]">{serverName}</div>
                 {episodes.map((episode, index) => (
                   <button
@@ -502,7 +502,7 @@ function WatchPlayer({ movieSlug }: { movieSlug: string }) {
       ) : null}
 
       {playbackMode !== 'embed' ? (
-        <section className={`absolute inset-x-0 bottom-0 px-8 pb-8 transition-opacity duration-300 ${showControls ? "opacity-100" : "opacity-0"}`}>
+        <section className={`absolute inset-x-0 bottom-0 px-4 pb-6 transition-opacity duration-300 sm:px-8 sm:pb-8 ${showControls ? "opacity-100" : "opacity-0"}`}>
         <div className="mb-5 flex items-center gap-4">
           <button className="group relative h-5 flex-1 cursor-pointer" type="button" aria-label="Tua video" onClick={seekToPercent}>
             <span className="absolute left-0 top-1/2 h-1 w-full -translate-y-1/2 rounded-full" style={timelineStyle} />
@@ -513,8 +513,8 @@ function WatchPlayer({ movieSlug }: { movieSlug: string }) {
           </span>
         </div>
 
-        <div className="flex items-center justify-between gap-6">
-          <div className="flex items-center gap-4">
+        <div className="flex items-center justify-between gap-3 sm:gap-6">
+          <div className="flex items-center gap-2 sm:gap-4">
             <button type="button" aria-label={isPlaying ? "Tạm dừng" : "Phát"} onClick={togglePlay} className="grid size-11 place-items-center rounded-full transition hover:bg-white/10">
               <Icon name={isPlaying ? "pause" : "play"} />
             </button>
@@ -524,7 +524,7 @@ function WatchPlayer({ movieSlug }: { movieSlug: string }) {
             <button type="button" aria-label="Tua tiến 10 giây" onClick={() => seekBy(10)} className="grid size-11 place-items-center rounded-full transition hover:bg-white/10">
               <Icon name="forward" />
             </button>
-            <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1 sm:gap-3">
               <button
                 type="button"
                 aria-label={muted ? "Bật âm thanh" : "Tắt âm thanh"}
@@ -533,7 +533,7 @@ function WatchPlayer({ movieSlug }: { movieSlug: string }) {
               >
                 <Icon name={muted || volume === 0 ? "muted" : "volume"} />
               </button>
-              <input aria-label="Âm lượng" type="range" min="0" max="1" step="0.01" value={muted ? 0 : volume} onChange={(event) => updateVolume(Number(event.target.value))} className="h-1 w-28 accent-[#e50914]" />
+              <input aria-label="Âm lượng" type="range" min="0" max="1" step="0.01" value={muted ? 0 : volume} onChange={(event) => updateVolume(Number(event.target.value))} className="hidden h-1 w-24 accent-[#e50914] sm:block sm:w-28" />
             </div>
           </div>
 
@@ -557,7 +557,7 @@ function WatchPlayer({ movieSlug }: { movieSlug: string }) {
 
             <div className="relative">
               {showEpisodes ? (
-                <div className="absolute bottom-14 right-0 w-72 overflow-hidden rounded bg-[#181818]/95 py-3 shadow-[0_8px_30px_rgba(0,0,0,.45)]">
+                <div className="absolute bottom-14 right-0 w-[min(288px,80vw)] overflow-hidden rounded bg-[#181818]/95 py-3 shadow-[0_8px_30px_rgba(0,0,0,.45)]">
                   <div className="px-4 pb-2 text-[13px] text-[#b3b3b3]">{serverName}</div>
                   {episodes.map((episode, index) => (
                     <button
@@ -587,7 +587,7 @@ function WatchPlayer({ movieSlug }: { movieSlug: string }) {
       ) : null}
 
       {nextEpisode && showNextOverlay && playbackMode !== 'embed' ? (
-        <div className="absolute bottom-28 right-8 z-40 w-72 rounded-lg bg-[#181818]/95 p-4 shadow-[0_8px_30px_rgba(0,0,0,.45)] backdrop-blur">
+        <div className="absolute bottom-24 right-4 z-40 w-[min(288px,80vw)] rounded-lg bg-[#181818]/95 p-4 shadow-[0_8px_30px_rgba(0,0,0,.45)] backdrop-blur sm:bottom-28 sm:right-8">
           <p className="text-[13px] text-[#b3b3b3]">Tiếp theo</p>
           <p className="mt-1 text-[15px] font-medium text-white">Tập {nextEpisode.name}</p>
           <div className="mt-3 flex items-center gap-2">

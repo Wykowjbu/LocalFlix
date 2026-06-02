@@ -80,7 +80,7 @@ export default function MovieRow({
     <section className="slider-row group/row relative py-[1.6vw]">
       <div className="mb-2 flex items-end gap-2 px-[4%]">
         <h2 className="text-[clamp(18px,1.4vw,24px)] font-bold leading-tight">{title}</h2>
-        <ul className="ml-auto hidden items-center gap-1 opacity-0 transition-opacity duration-200 group-hover/row:flex group-hover/row:opacity-100" aria-hidden="true">
+        <ul className="ml-auto flex items-center gap-1 opacity-0 transition-opacity duration-200 group-hover/row:opacity-100 md:ml-auto md:opacity-0" aria-hidden="true">
           {Array.from({ length: pageCount }, (_, index) => (
             <li key={index} className={`h-0.5 w-3 ${index === activePage ? "bg-[#aaa]" : "bg-[#4d4d4d]"}`} />
           ))}
@@ -131,8 +131,8 @@ export default function MovieRow({
           aria-label="Xem video trước"
           disabled={pageCount <= 1}
           onClick={goBack}
-          className={`absolute left-0 top-12 bottom-12 z-20 grid w-[4%] min-w-10 cursor-pointer place-items-center bg-black/45 text-white opacity-0 transition-opacity duration-200 ${
-            pageCount > 1 ? "group-hover/row:opacity-100 hover:bg-black/65" : "pointer-events-none"
+          className={`absolute left-0 top-12 bottom-12 z-20 grid w-[4%] min-w-10 cursor-pointer place-items-center bg-black/45 text-white transition-opacity duration-200 ${
+            pageCount > 1 ? "opacity-100 md:opacity-0 md:group-hover/row:opacity-100 hover:bg-black/65" : "pointer-events-none"
           }`}
         >
           <Icon name="chevron" className="h-10 w-10 rotate-180 drop-shadow-[0_1px_2px_rgba(0,0,0,.8)]" />
@@ -142,8 +142,8 @@ export default function MovieRow({
           aria-label="Xem video khác"
           disabled={pageCount <= 1}
           onClick={goNext}
-          className={`absolute right-0 top-12 bottom-12 z-20 grid w-[4%] min-w-10 cursor-pointer place-items-center bg-black/45 text-white opacity-0 transition-opacity duration-200 ${
-            pageCount > 1 ? "group-hover/row:opacity-100 hover:bg-black/65" : "pointer-events-none"
+          className={`absolute right-0 top-12 bottom-12 z-20 grid w-[4%] min-w-10 cursor-pointer place-items-center bg-black/45 text-white transition-opacity duration-200 ${
+            pageCount > 1 ? "opacity-100 md:opacity-0 md:group-hover/row:opacity-100 hover:bg-black/65" : "pointer-events-none"
           }`}
         >
           <Icon name="chevron" className="h-10 w-10 drop-shadow-[0_1px_2px_rgba(0,0,0,.8)]" />
